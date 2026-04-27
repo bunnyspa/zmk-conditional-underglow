@@ -1,0 +1,5 @@
+/ {
+    conditional_underglow: conditional_underglow {
+        compatible = "zmk,conditional-underglow";
+    };
+};

@@ -1,0 +1,47 @@
+description: |
+  Sets RGB underglow color and effect based on the active keymap layer and/or
+  the active BT profile. Priority (highest first): layer → BT profile → Kconfig default.
+
+  Layer entries apply on the central half only. Profile entries apply on both halves
+  when CONFIG_ZMK_CONDITIONAL_UNDERGLOW_LAYER_CENTRAL_ONLY=y (central writes the
+  active profile index to the peripheral via a custom GATT service).
+
+  Each entry is a 5-tuple: (index effect H S B)
+    index  — layer number or BT profile index
+    effect — underglow animation index (0 = solid)
+    H      — hue (0–359)
+    S      — saturation (0–100)
+    B      — brightness (0–100)
+
+  layer-entries are checked last-to-first; the highest-index active layer wins.
+  profile-entries are checked sequentially; the first matching profile wins.
+  If neither list matches, CONFIG_ZMK_RGB_UNDERGLOW_*_START Kconfig values are used.
+
+  Example:
+    &conditional_underglow {
+        layer-entries = <
+            4  0  221  100  25
+            5  0  359  100  25
+        >;
+        profile-entries = <
+            0  0    0    0  25
+            1  0  120  100  25
+        >;
+    };
+
+compatible: "zmk,conditional-underglow"
+
+properties:
+  layer-entries:
+    type: array
+    description: >
+      Flat array of (layer effect H S B) 5-tuples.
+      Entries are checked last-to-first; the first active layer wins.
+      Applied on the central half only.
+
+  profile-entries:
+    type: array
+    description: >
+      Flat array of (profile effect H S B) 5-tuples.
+      Applied when no layer entry matches (central) or always (peripheral).
+      Profile indices can be listed in any order; gaps use Kconfig default.
