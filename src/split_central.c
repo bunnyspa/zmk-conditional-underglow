@@ -20,6 +20,7 @@ struct peripheral_slot {
     struct bt_conn *conn;
     uint16_t profile_handle;
     struct bt_gatt_discover_params disc_params;
+    struct k_work_delayable discovery_work;
 };
 
 static struct peripheral_slot slots[CONFIG_ZMK_CONDITIONAL_UNDERGLOW_PERIPHERAL_COUNT];
@@ -111,6 +112,15 @@ static void start_discovery(struct bt_conn *conn) {
     }
 }
 
+static void discovery_work_handler(struct k_work *work) {
+    struct k_work_delayable *dwork = k_work_delayable_from_work(work);
+    struct peripheral_slot *slot = CONTAINER_OF(dwork, struct peripheral_slot, discovery_work);
+
+    if (slot->conn) {
+        start_discovery(slot->conn);
+    }
+}
+
 static void on_connected(struct bt_conn *conn, uint8_t conn_err) {
     if (conn_err) {
         return;
@@ -132,7 +142,9 @@ static void on_connected(struct bt_conn *conn, uint8_t conn_err) {
     slot->conn           = bt_conn_ref(conn);
     slot->profile_handle = 0;
 
-    start_discovery(conn);
+    // Delay discovery to avoid competing with ZMK's own split GATT setup
+    // which also starts immediately on connection.
+    k_work_schedule(&slot->discovery_work, K_SECONDS(2));
 }
 
 static void on_disconnected(struct bt_conn *conn, uint8_t reason) {
@@ -141,6 +153,7 @@ static void on_disconnected(struct bt_conn *conn, uint8_t reason) {
         return;
     }
 
+    k_work_cancel_delayable(&slot->discovery_work);
     bt_conn_unref(slot->conn);
     slot->conn           = NULL;
     slot->profile_handle = 0;
@@ -164,6 +177,14 @@ static void sync_profile(uint8_t idx) {
         }
     }
 }
+
+static int cond_ug_central_init(void) {
+    for (int i = 0; i < ARRAY_SIZE(slots); i++) {
+        k_work_init_delayable(&slots[i].discovery_work, discovery_work_handler);
+    }
+    return 0;
+}
+SYS_INIT(cond_ug_central_init, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);
 
 #endif // CONFIG_ZMK_CONDITIONAL_UNDERGLOW_PERIPHERAL_COUNT > 0
 
