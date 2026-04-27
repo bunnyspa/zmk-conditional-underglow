@@ -1,7 +1,3 @@
-#include <zephyr/bluetooth/conn.h>
-#include <zephyr/bluetooth/gatt.h>
-#include <zephyr/bluetooth/uuid.h>
-#include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zmk/event_manager.h>
 #include <zmk/events/endpoint_changed.h>
@@ -9,6 +5,13 @@
 #include "conditional_underglow_split.h"
 
 LOG_MODULE_REGISTER(cond_ug_central, CONFIG_ZMK_LOG_LEVEL);
+
+#if CONFIG_ZMK_CONDITIONAL_UNDERGLOW_PERIPHERAL_COUNT > 0
+
+#include <zephyr/bluetooth/conn.h>
+#include <zephyr/bluetooth/gatt.h>
+#include <zephyr/bluetooth/uuid.h>
+#include <zephyr/kernel.h>
 
 static const struct bt_uuid_128 svc_uuid  = BT_UUID_INIT_128(COND_UG_SVC_UUID);
 static const struct bt_uuid_128 prof_uuid = BT_UUID_INIT_128(COND_UG_PROF_UUID);
@@ -19,7 +22,7 @@ struct peripheral_slot {
     struct bt_gatt_discover_params disc_params;
 };
 
-static struct peripheral_slot slots[CONFIG_ZMK_SPLIT_BLE_PERIPHERAL_COUNT];
+static struct peripheral_slot slots[CONFIG_ZMK_CONDITIONAL_UNDERGLOW_PERIPHERAL_COUNT];
 
 static struct peripheral_slot *slot_for_conn(struct bt_conn *conn) {
     for (int i = 0; i < ARRAY_SIZE(slots); i++) {
@@ -162,15 +165,17 @@ static void sync_profile(uint8_t idx) {
     }
 }
 
+#endif // CONFIG_ZMK_CONDITIONAL_UNDERGLOW_PERIPHERAL_COUNT > 0
+
 static int endpoint_listener(const zmk_event_t *eh) {
     const struct zmk_endpoint_changed *ev = as_zmk_endpoint_changed(eh);
-    if (!ev) {
+    if (!ev || ev->endpoint.transport != ZMK_TRANSPORT_BLE) {
         return ZMK_EV_EVENT_BUBBLE;
     }
 
-    if (ev->endpoint.transport == ZMK_TRANSPORT_BLE) {
-        sync_profile((uint8_t)ev->endpoint.ble.profile_index);
-    }
+#if CONFIG_ZMK_CONDITIONAL_UNDERGLOW_PERIPHERAL_COUNT > 0
+    sync_profile((uint8_t)ev->endpoint.ble.profile_index);
+#endif
 
     return ZMK_EV_EVENT_BUBBLE;
 }
