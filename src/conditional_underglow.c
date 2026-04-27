@@ -7,7 +7,7 @@
 #include <zmk/event_manager.h>
 #include <zmk/rgb_underglow.h>
 
-#if !IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_PERIPHERAL)
+#if !IS_ENABLED(CONFIG_ZMK_SPLIT) || IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
 #include <zmk/events/endpoint_changed.h>
 #include <zmk/endpoints_types.h>
 #if IS_ENABLED(CONFIG_ZMK_CONDITIONAL_UNDERGLOW_LAYER_CENTRAL_ONLY)
@@ -56,7 +56,7 @@ static void apply_default(void) {
 }
 
 static void apply_color(void) {
-#if !IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_PERIPHERAL) && \
+#if (!IS_ENABLED(CONFIG_ZMK_SPLIT) || IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)) && \
      IS_ENABLED(CONFIG_ZMK_CONDITIONAL_UNDERGLOW_LAYER_CENTRAL_ONLY)
     // Layer check — highest priority, central only.
     // Iterate last-to-first so higher-index entries win on ties.
@@ -101,7 +101,7 @@ void conditional_ug_set_profile(uint8_t idx) {
     apply_color();
 }
 
-#if !IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_PERIPHERAL)
+#if !IS_ENABLED(CONFIG_ZMK_SPLIT) || IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
 
 static int endpoint_listener(const zmk_event_t *eh) {
     const struct zmk_endpoint_changed *ev = as_zmk_endpoint_changed(eh);
@@ -125,7 +125,8 @@ static int endpoint_listener(const zmk_event_t *eh) {
 ZMK_LISTENER(cond_ug_endpoint, endpoint_listener);
 ZMK_SUBSCRIPTION(cond_ug_endpoint, zmk_endpoint_changed);
 
-#if IS_ENABLED(CONFIG_ZMK_CONDITIONAL_UNDERGLOW_LAYER_CENTRAL_ONLY)
+#if (!IS_ENABLED(CONFIG_ZMK_SPLIT) || IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)) && \
+     IS_ENABLED(CONFIG_ZMK_CONDITIONAL_UNDERGLOW_LAYER_CENTRAL_ONLY)
 
 static int layer_listener(const zmk_event_t *eh) {
     apply_color();
@@ -135,8 +136,8 @@ static int layer_listener(const zmk_event_t *eh) {
 ZMK_LISTENER(cond_ug_layer, layer_listener);
 ZMK_SUBSCRIPTION(cond_ug_layer, zmk_layer_state_changed);
 
-#endif // IS_ENABLED(CONFIG_ZMK_CONDITIONAL_UNDERGLOW_LAYER_CENTRAL_ONLY)
-#endif // !IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_PERIPHERAL)
+#endif // layer listener
+#endif // !split || central
 
 static int conditional_underglow_init(void) {
     apply_color();
