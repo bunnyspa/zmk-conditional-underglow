@@ -1,0 +1,50 @@
+description: |
+  Changes RGB underglow color and effect based on active keymap layer and/or
+  active Bluetooth profile. Layer takes priority over BT profile; BT profile
+  takes priority over the default (_START) config.
+
+  On each layer or profile change the module scans entries from last to first;
+  the first match wins (list entries in ascending priority order).
+
+  A state tuple is (index effect H S B):
+    index  — layer number (layer-entries) or BT profile index 0–4 (profile-entries)
+    effect — RGB effect index (see https://zmk.dev/docs/config/lighting)
+    H      — hue 0–360
+    S      — saturation 0–100
+    B      — brightness 0–100
+
+  When no entry matches, the CONFIG_ZMK_RGB_UNDERGLOW_*_START values are used.
+
+  CONFIG_ZMK_CONDITIONAL_UNDERGLOW_LAYER_CENTRAL_ONLY (split only):
+    n (default) — layer-triggered changes sync to peripheral via behavior invocation
+    y           — layer-triggered changes apply to central only; peripheral is
+                  unchanged while the layer is active
+
+  BT profile changes and the default fallback always sync to both halves.
+
+  Example:
+    / {
+        conditional_underglow: conditional_underglow {
+            compatible = "zmk,conditional-underglow";
+            layer-entries = <
+                4 0 221 100 25
+                5 0 359 100 25
+                6 0 359 100 25
+            >;
+            profile-entries = <
+                0 0   0   0 25
+                1 0 120 100 25
+                2 0 221 100 25
+            >;
+        };
+    };
+
+compatible: "zmk,conditional-underglow"
+
+properties:
+  layer-entries:
+    type: array
+    description: "Flat array of [layer effect H S B] tuples, ascending priority order."
+  profile-entries:
+    type: array
+    description: "Flat array of [profile effect H S B] tuples, ascending priority order."
