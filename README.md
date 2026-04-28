@@ -8,15 +8,17 @@ A [ZMK](https://zmk.dev) module that changes RGB underglow color and effect base
 
 ---
 
-## Behavior by Situation
+## Peripheral Behavior by Situation
 
-| Situation | `LAYER_CENTRAL_ONLY=y` central | `LAYER_CENTRAL_ONLY=y` peripheral | `LAYER_CENTRAL_ONLY=n` central | `LAYER_CENTRAL_ONLY=n` peripheral |
-|-----------|-------------------------------|-----------------------------------|-------------------------------|-----------------------------------|
-| Layer active | Layer color+effect | No change (retains last synced state) | Layer color+effect | Layer color+effect |
-| Layer inactive + BT profile match | Profile color+effect | Profile color+effect | Profile color+effect | Profile color+effect |
-| Layer inactive + no match | Default (`_START`) | Default (`_START`) | Default (`_START`) | Default (`_START`) |
+Central always gets the color+effect. This table shows what the **peripheral** receives:
 
-BT profile changes and the default fallback always sync to **both halves** regardless of the flag.
+| Situation | `LAYER_CENTRAL_ONLY=y` | `LAYER_CENTRAL_ONLY=n` |
+|-----------|------------------------|------------------------|
+| Layer active | No change (retains last synced state) | Layer color+effect |
+| Layer inactive + BT profile match | Profile color+effect | Profile color+effect |
+| Layer inactive + no match | Default (`_START`) | Default (`_START`) |
+
+BT profile changes and the default fallback always sync to both halves regardless of the flag.
 
 > **Note on effect sync:** When syncing to peripheral (`LAYER_CENTRAL_ONLY=n`), only the HSB color is forwarded via ZMK's behavior invocation system. The effect index is applied locally on central; the peripheral retains its current effect. For typical use (effect=0 solid), this is not noticeable.
 
