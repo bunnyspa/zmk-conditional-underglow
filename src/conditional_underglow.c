@@ -13,6 +13,11 @@
 #include <zmk/events/ble_active_profile_changed.h>
 #endif
 
+#if IS_ENABLED(CONFIG_ZMK_USB)
+#include <zmk/endpoints.h>
+#include <zmk/events/endpoint_changed.h>
+#endif
+
 #if IS_ENABLED(CONFIG_ZMK_SPLIT)
 #include <zmk/behavior.h>
 #include <dt-bindings/zmk/rgb.h>
@@ -95,6 +100,12 @@ static int conditional_underglow_listener(const zmk_event_t *eh) {
     }
 
 #if IS_ENABLED(CONFIG_ZMK_BLE)
+#if IS_ENABLED(CONFIG_ZMK_USB)
+    if (zmk_endpoints_selected().transport == ZMK_TRANSPORT_USB) {
+        apply_default();
+        return ZMK_EV_EVENT_BUBBLE;
+    }
+#endif
     int profile = zmk_ble_active_profile_index();
     for (int i = (PROFILE_ENTRIES_LEN / 5 - 1) * 5; i >= 0; i -= 5) {
         if ((int)profile_entries[i] == profile) {
@@ -125,4 +136,7 @@ ZMK_LISTENER(conditional_underglow, conditional_underglow_listener);
 ZMK_SUBSCRIPTION(conditional_underglow, zmk_layer_state_changed);
 #if IS_ENABLED(CONFIG_ZMK_BLE)
 ZMK_SUBSCRIPTION(conditional_underglow, zmk_ble_active_profile_changed);
+#endif
+#if IS_ENABLED(CONFIG_ZMK_USB)
+ZMK_SUBSCRIPTION(conditional_underglow, zmk_endpoint_changed);
 #endif

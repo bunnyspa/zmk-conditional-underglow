@@ -16,7 +16,7 @@ Central always gets the color+effect. This table shows what the **peripheral** r
 |-----------|------------------------|------------------------|
 | Layer active | No change (retains last synced state) | Layer color+effect |
 | Layer inactive + BT profile match | Profile color+effect | Profile color+effect |
-| Layer inactive + no match | Default (`_START`) | Default (`_START`) |
+| Layer inactive + no match (or USB active) | Default (`_START`) | Default (`_START`) |
 
 BT profile changes and the default fallback always sync to both halves regardless of the flag.
 
