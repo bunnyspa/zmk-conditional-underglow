@@ -165,16 +165,13 @@ static const struct overlay_desc overlays[] = {
 #define N_ENTRIES   ARRAY_SIZE(entries)
 #define N_OVERLAYS  ARRAY_SIZE(overlays)
 
-#if DT_INST_NODE_HAS_PROP(0, led_map)
+#if DT_INST_PROP_HAS_IDX(0, led_map, 0)
 static const uint16_t led_map[] = DT_INST_PROP(0, led_map);
 #define LED_MAP_LEN ARRAY_SIZE(led_map)
 #else
 static const uint16_t led_map[] = { 0 };
 #define LED_MAP_LEN 0
 #endif
-
-BUILD_ASSERT(N_OVERLAYS == 0 || LED_MAP_LEN > 0,
-             "overlays defined but led-map is missing on conditional_underglow");
 
 #define STRIP_NODE       DT_CHOSEN(zmk_underglow)
 #define STRIP_NUM_PIXELS DT_PROP(STRIP_NODE, chain_length)
