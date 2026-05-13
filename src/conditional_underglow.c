@@ -67,12 +67,23 @@ LOG_MODULE_REGISTER(conditional_underglow, CONFIG_ZMK_LOG_LEVEL);
                  || DT_NODE_HAS_PROP(node, profile),                        \
                  "'state' requires 'profile' on conditional_underglow child");
 
+/* Output endpoint bits. Exactly one is active at a time at runtime. */
+#define CU_ENDPOINT_BLE BIT(0)
+#define CU_ENDPOINT_USB BIT(1)
+
+#define ENDPOINT_BIT(node, prop, idx) \
+    | DT_CAT(CU_ENDPOINT_, DT_STRING_UPPER_TOKEN_BY_IDX(node, prop, idx))
+#define ENDPOINT_MASK(node) ((uint8_t)(0                                    \
+    COND_CODE_1(DT_NODE_HAS_PROP(node, endpoint),                           \
+        (DT_FOREACH_PROP_ELEM(node, endpoint, ENDPOINT_BIT)), ())))
+
 struct entry_desc {
     uint32_t layers_mask;
     bool     has_layers;
     bool     has_profile;
     uint8_t  profile;
     uint8_t  state_mask;
+    uint8_t  endpoint_mask;
     uint16_t h;
     uint8_t  s;
     uint8_t  b;
@@ -80,15 +91,16 @@ struct entry_desc {
 };
 
 #define ENTRY_DESC(node) {                                                  \
-    .layers_mask = LAYERS_MASK(node),                                       \
-    .has_layers  = DT_NODE_HAS_PROP(node, layers),                          \
-    .has_profile = DT_NODE_HAS_PROP(node, profile),                         \
-    .profile     = DT_PROP_OR(node, profile, 0),                            \
-    .state_mask  = STATE_MASK(node),                                        \
-    .h           = DT_PROP_BY_IDX(node, color, 0),                          \
-    .s           = DT_PROP_BY_IDX(node, color, 1),                          \
-    .b           = DT_PROP_BY_IDX(node, color, 2),                          \
-    .effect      = DT_PROP_OR(node, effect, 0),                             \
+    .layers_mask   = LAYERS_MASK(node),                                     \
+    .has_layers    = DT_NODE_HAS_PROP(node, layers),                        \
+    .has_profile   = DT_NODE_HAS_PROP(node, profile),                       \
+    .profile       = DT_PROP_OR(node, profile, 0),                          \
+    .state_mask    = STATE_MASK(node),                                      \
+    .endpoint_mask = ENDPOINT_MASK(node),                                   \
+    .h             = DT_PROP_BY_IDX(node, color, 0),                        \
+    .s             = DT_PROP_BY_IDX(node, color, 1),                        \
+    .b             = DT_PROP_BY_IDX(node, color, 2),                        \
+    .effect        = DT_PROP_OR(node, effect, 0),                           \
 },
 
 #if DT_NODE_EXISTS(ENTRIES_NODE)
@@ -109,6 +121,7 @@ struct overlay_desc {
     bool     has_profile;
     uint8_t  profile;
     uint8_t  state_mask;
+    uint8_t  endpoint_mask;
     uint16_t h;
     uint8_t  s;
     uint8_t  b;
@@ -119,16 +132,17 @@ struct overlay_desc {
 #define KP_ELEM(node, prop, idx) DT_PROP_BY_IDX(node, prop, idx),
 
 #define OVERLAY_DESC(node) {                                                \
-    .layers_mask = LAYERS_MASK(node),                                       \
-    .has_layers  = DT_NODE_HAS_PROP(node, layers),                          \
-    .has_profile = DT_NODE_HAS_PROP(node, profile),                         \
-    .profile     = DT_PROP_OR(node, profile, 0),                            \
-    .state_mask  = STATE_MASK(node),                                        \
-    .h           = DT_PROP_BY_IDX(node, color, 0),                          \
-    .s           = DT_PROP_BY_IDX(node, color, 1),                          \
-    .b           = DT_PROP_BY_IDX(node, color, 2),                          \
-    .kp_count    = DT_PROP_LEN(node, key_positions),                        \
-    .kps         = { DT_FOREACH_PROP_ELEM(node, key_positions, KP_ELEM) },  \
+    .layers_mask   = LAYERS_MASK(node),                                     \
+    .has_layers    = DT_NODE_HAS_PROP(node, layers),                        \
+    .has_profile   = DT_NODE_HAS_PROP(node, profile),                       \
+    .profile       = DT_PROP_OR(node, profile, 0),                          \
+    .state_mask    = STATE_MASK(node),                                      \
+    .endpoint_mask = ENDPOINT_MASK(node),                                   \
+    .h             = DT_PROP_BY_IDX(node, color, 0),                        \
+    .s             = DT_PROP_BY_IDX(node, color, 1),                        \
+    .b             = DT_PROP_BY_IDX(node, color, 2),                        \
+    .kp_count      = DT_PROP_LEN(node, key_positions),                      \
+    .kps           = { DT_FOREACH_PROP_ELEM(node, key_positions, KP_ELEM) },\
 },
 
 #define OVERLAY_ASSERTS(node)                                               \
@@ -204,27 +218,26 @@ static bool any_layer_active(uint32_t mask) {
     return false;
 }
 
-/* Per-slot BT profile state cache. Central computes and broadcasts via the
- * cu_state_sync behavior; peripheral receives and stores. Both halves read
- * from here in selectors_match. */
+/* Per-slot BT profile state cache + current endpoint. Central computes and
+ * broadcasts via the cu_state_sync behavior (slot states in param1, endpoint
+ * in param2); peripheral receives and stores. Both halves read from here in
+ * selectors_match. */
 #define CU_NUM_PROFILES 5
 uint8_t cu_profile_states[CU_NUM_PROFILES];
+uint8_t cu_current_endpoint = CU_ENDPOINT_BLE;
 
 static bool selectors_match(bool has_layers, uint32_t layers_mask,
                             bool has_profile, uint8_t profile,
-                            uint8_t state_mask) {
+                            uint8_t state_mask, uint8_t endpoint_mask) {
     if (has_layers && !any_layer_active(layers_mask)) return false;
+    if (endpoint_mask != 0 && !(endpoint_mask & cu_current_endpoint)) return false;
     if (!has_profile) return true;
     if (profile >= CU_NUM_PROFILES) return false;
     uint8_t state = cu_profile_states[profile];
     if (state_mask == 0) {
-        /* Back-compat: profile-only = "active BLE profile". On central we
-         * additionally gate on the BLE endpoint being selected (so USB use
-         * doesn't trigger profile entries). Peripheral has no endpoint
-         * info — it just checks the ACTIVE bit. */
-#if CU_IS_CENTRAL && IS_ENABLED(CONFIG_ZMK_USB)
-        if (zmk_endpoints_selected().transport != ZMK_TRANSPORT_BLE) return false;
-#endif
+        /* Back-compat: profile-only = "active BLE profile". Requires BLE
+         * endpoint (USB use shouldn't trigger profile entries). */
+        if (!(cu_current_endpoint & CU_ENDPOINT_BLE)) return false;
         return (state & CU_STATE_ACTIVE) != 0;
     }
     return (state_mask & state) != 0;
@@ -275,7 +288,7 @@ static int resolve_and_render(const zmk_event_t *eh) {
     for (size_t i = 0; i < N_ENTRIES; i++) {
         if (selectors_match(entries[i].has_layers, entries[i].layers_mask,
                             entries[i].has_profile, entries[i].profile,
-                            entries[i].state_mask)) {
+                            entries[i].state_mask, entries[i].endpoint_mask)) {
             bg = &entries[i];
         }
     }
@@ -299,7 +312,7 @@ static int resolve_and_render(const zmk_event_t *eh) {
     for (size_t i = 0; i < N_OVERLAYS; i++) {
         if (selectors_match(overlays[i].has_layers, overlays[i].layers_mask,
                             overlays[i].has_profile, overlays[i].profile,
-                            overlays[i].state_mask)) {
+                            overlays[i].state_mask, overlays[i].endpoint_mask)) {
             matched++;
         }
     }
@@ -334,7 +347,7 @@ static int resolve_and_render(const zmk_event_t *eh) {
         const struct overlay_desc *o = &overlays[i];
         if (!selectors_match(o->has_layers, o->layers_mask,
                              o->has_profile, o->profile,
-                             o->state_mask)) continue;
+                             o->state_mask, o->endpoint_mask)) continue;
         struct led_rgb c = hsb_to_rgb(o->h, o->s, o->b);
         for (size_t j = 0; j < o->kp_count; j++) {
             uint16_t kp = o->kps[j];
@@ -374,15 +387,27 @@ static uint8_t compute_slot_state(uint8_t i) {
     return s;
 }
 
+static uint8_t compute_endpoint(void) {
+#if IS_ENABLED(CONFIG_ZMK_USB)
+    return (zmk_endpoints_selected().transport == ZMK_TRANSPORT_USB)
+               ? CU_ENDPOINT_USB
+               : CU_ENDPOINT_BLE;
+#else
+    return CU_ENDPOINT_BLE;
+#endif
+}
+
 static void push_state_to_peripheral(void) {
-    uint32_t encoded = 0;
+    uint32_t states_encoded = 0;
     for (int i = 0; i < CU_NUM_PROFILES; i++) {
         cu_profile_states[i] = compute_slot_state(i);
-        encoded |= ((uint32_t)(cu_profile_states[i] & 0xF)) << (i * 4);
+        states_encoded |= ((uint32_t)(cu_profile_states[i] & 0xF)) << (i * 4);
     }
+    cu_current_endpoint = compute_endpoint();
     struct zmk_behavior_binding binding = {
         .behavior_dev = "cu_state_sync",
-        .param1 = encoded,
+        .param1 = states_encoded,
+        .param2 = cu_current_endpoint,
     };
     struct zmk_behavior_binding_event event = {
         .layer = 0,
@@ -434,9 +459,12 @@ static int conditional_underglow_init(void) {
                 CONFIG_ZMK_RGB_UNDERGLOW_HUE_START,
                 CONFIG_ZMK_RGB_UNDERGLOW_SAT_START,
                 CONFIG_ZMK_RGB_UNDERGLOW_BRT_START);
-    /* Push initial state once BLE is up. The first ble_active_profile_changed
-     * or endpoint_changed event will refresh it; doing it from init runs
-     * before BLE is fully ready, so we rely on those events instead. */
+#if IS_ENABLED(CONFIG_ZMK_BLE)
+    cu_current_endpoint = compute_endpoint();
+#endif
+    /* Initial profile-state push is deferred to the first
+     * ble_active_profile_changed / endpoint_changed event — BLE may not be
+     * fully up yet at SYS_INIT time. */
 #endif
     return 0;
 }

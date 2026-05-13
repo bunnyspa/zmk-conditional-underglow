@@ -29,8 +29,10 @@ On every layer / BT profile / endpoint change the module runs two passes:
 
 A child matches when:
 - `layers` is absent OR at least one listed layer is active, AND
-- `profile` is absent OR — if `state` is absent — the active endpoint is BLE on
-  that profile (back-compat default) — OR — if `state` is present — the
+- `endpoint` is absent OR the active output endpoint is in the listed
+  transports (`ble` / `usb`), AND
+- `profile` is absent OR — if `state` is absent — the active endpoint is BLE
+  on that profile (back-compat default) — OR — if `state` is present — the
   profile is in any listed state.
 
 ### Per-profile `state`
@@ -220,6 +222,7 @@ You can equivalently extend the predeclared labels:
 | `layers` | array | no | Match if any listed layer is active. Omit = any layer. |
 | `profile` | int | no | BT profile 0–4. Omit = any profile / USB. |
 | `state` | string-array | no | Profile-state filter (requires `profile`). Values: `unassigned`, `disconnected`, `connected`, `active`. See above. |
+| `endpoint` | string-array | no | Output-transport filter. Values: `ble`, `usb`. Omit = endpoint-agnostic. |
 | `color` | `<H S B>` | **yes** | H 0–360, S 0–100, B 0–100. |
 | `effect` | int | no | ZMK effect index. Default 0 (solid). See [ZMK lighting](https://zmk.dev/docs/config/lighting). |
 
@@ -230,6 +233,7 @@ You can equivalently extend the predeclared labels:
 | `layers` | array | no | Same semantics as above. |
 | `profile` | int | no | Same semantics as above. |
 | `state` | string-array | no | Same semantics as above. |
+| `endpoint` | string-array | no | Same semantics as above. |
 | `key-positions` | array | **yes** | Key-position indices to paint, translated through `led-map`. |
 | `color` | `<H S B>` | **yes** | Solid color (overlays are solid-only). |
 

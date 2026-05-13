@@ -23,6 +23,15 @@ child-binding:
       description: |
         BT profile index (0-4) that activates this overlay. Omit to match on
         any profile / USB.
+    endpoint:
+      type: string-array
+      required: false
+      enum:
+        - ble
+        - usb
+      description: |
+        Match only when the active output endpoint is in any of the listed
+        transports. Omit = endpoint-agnostic.
     state:
       type: string-array
       required: false
