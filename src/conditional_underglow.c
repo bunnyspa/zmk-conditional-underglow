@@ -209,10 +209,6 @@ static struct led_rgb hsb_to_rgb(uint16_t h, uint8_t s, uint8_t b) {
     };
 }
 
-static bool any_layer_active(uint32_t mask) {
-    return (mask & cu_layer_mask) != 0;
-}
-
 /* Shared state cache. Central computes and broadcasts via the cu_state_sync
  * behavior; peripheral receives and stores. Both halves read from here in
  * selectors_match / any_layer_active.
@@ -228,6 +224,10 @@ static bool any_layer_active(uint32_t mask) {
 uint8_t  cu_profile_states[CU_NUM_PROFILES];
 uint8_t  cu_current_endpoint = CU_ENDPOINT_BLE;
 uint32_t cu_layer_mask;
+
+static bool any_layer_active(uint32_t mask) {
+    return (mask & cu_layer_mask) != 0;
+}
 
 static bool selectors_match(bool has_layers, uint32_t layers_mask,
                             bool has_profile, uint8_t profile,
