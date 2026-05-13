@@ -57,7 +57,7 @@ LOG_MODULE_REGISTER(conditional_underglow, CONFIG_ZMK_LOG_LEVEL);
 #define CU_STATE_ACTIVE       BIT(3)
 
 #define STATE_BIT(node, prop, idx) \
-    | DT_CAT(CU_STATE_, DT_STRING_UPPER_TOKEN_BY_IDX(node, prop, idx))
+    | UTIL_CAT(CU_STATE_, DT_STRING_UPPER_TOKEN_BY_IDX(node, prop, idx))
 #define STATE_MASK(node) ((uint8_t)(0                                       \
     COND_CODE_1(DT_NODE_HAS_PROP(node, state),                              \
         (DT_FOREACH_PROP_ELEM(node, state, STATE_BIT)), ())))
@@ -72,7 +72,7 @@ LOG_MODULE_REGISTER(conditional_underglow, CONFIG_ZMK_LOG_LEVEL);
 #define CU_ENDPOINT_USB BIT(1)
 
 #define ENDPOINT_BIT(node, prop, idx) \
-    | DT_CAT(CU_ENDPOINT_, DT_STRING_UPPER_TOKEN_BY_IDX(node, prop, idx))
+    | UTIL_CAT(CU_ENDPOINT_, DT_STRING_UPPER_TOKEN_BY_IDX(node, prop, idx))
 #define ENDPOINT_MASK(node) ((uint8_t)(0                                    \
     COND_CODE_1(DT_NODE_HAS_PROP(node, endpoint),                           \
         (DT_FOREACH_PROP_ELEM(node, endpoint, ENDPOINT_BIT)), ())))
