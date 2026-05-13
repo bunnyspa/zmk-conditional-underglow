@@ -20,3 +20,14 @@ properties:
   "#binding-cells":
     type: int
     const: 1
+  locality:
+    type: string
+    required: false
+    enum:
+      - central
+      - event_source
+      - global
+    description: |
+      Where this behavior runs on a split keyboard. Set to "global" so the
+      cu_state_sync invocation propagates from central to peripheral via
+      ZMK's split behavior queue.
