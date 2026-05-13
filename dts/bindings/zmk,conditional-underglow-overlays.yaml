@@ -1,0 +1,56 @@
+description: |
+  Container for per-LED overlay entries. Each matching overlay is painted on
+  top of the whole-strip background, after key-positions are translated to
+  strip-LED indices via the parent led-map. The presence of any matching
+  overlay puts the module into render-ownership mode (ZMK's effect loop is
+  stopped). Overlays are solid-only.
+
+compatible: "zmk,conditional-underglow-overlays"
+
+child-binding:
+  description: |
+    A per-LED overlay. Paints each listed key-position with the given color.
+    Selectors are AND-combined; omitted selectors match anything.
+  properties:
+    layers:
+      type: array
+      required: false
+      description: |
+        Layer indices that activate this overlay. Omit to match on any layer.
+    profile:
+      type: int
+      required: false
+      description: |
+        BT profile index (0-4) that activates this overlay. Omit to match on
+        any profile / USB.
+    state:
+      type: string-array
+      required: false
+      enum:
+        - unassigned
+        - disconnected
+        - connected
+        - active
+      description: |
+        Narrow the match by profile state. Requires `profile`. Matches if
+        the profile is in ANY listed state. States are orthogonal — a slot
+        has exactly one of unassigned/disconnected/connected, PLUS the
+        active flag if it's the currently selected profile.
+
+          unassigned   — no peer bonded to this slot
+          disconnected — peer bonded but link is down
+          connected    — peer bonded and link is up
+          active       — this slot is the currently selected profile
+
+        If `state` is omitted, the overlay matches only when `profile` is
+        the active BLE profile (back-compat default).
+    key-positions:
+      type: array
+      required: true
+      description: |
+        Key-position indices to paint. Each kp is translated to a strip-LED
+        index through the parent led-map; kps mapped to 0xFFFF are skipped.
+    color:
+      type: array
+      required: true
+      description: "[H S B]: hue 0-360, saturation 0-100, brightness 0-100."

@@ -1,5 +1,23 @@
 / {
+    behaviors {
+        /* Internal: carries 5-slot BT profile state from central to
+         * peripheral. Don't reference in keymaps. */
+        cu_state_sync: behavior_cu_state_sync {
+            compatible = "zmk,behavior-conditional-underglow-state-sync";
+            #binding-cells = <1>;
+            locality = "global";
+        };
+    };
+
     conditional_underglow: conditional_underglow {
         compatible = "zmk,conditional-underglow";
+
+        cu_entries: entries {
+            compatible = "zmk,conditional-underglow-entries";
+        };
+
+        cu_overlays: overlays {
+            compatible = "zmk,conditional-underglow-overlays";
+        };
     };
 };

@@ -1,0 +1,56 @@
+description: |
+  Container for whole-strip background entries. Children are matched against
+  the active layer/profile state; the last matching child's color+effect
+  becomes the whole-strip background.
+
+compatible: "zmk,conditional-underglow-entries"
+
+child-binding:
+  description: |
+    A whole-strip background entry. Matches when every specified selector
+    applies. Selectors are AND-combined; omitted selectors match anything.
+  properties:
+    layers:
+      type: array
+      required: false
+      description: |
+        Layer indices that activate this entry. Entry matches if any listed
+        layer is active. Omit to match on any layer.
+    profile:
+      type: int
+      required: false
+      description: |
+        BT profile index (0-4) that activates this entry. Omit to match on
+        any profile / USB.
+    state:
+      type: string-array
+      required: false
+      enum:
+        - unassigned
+        - disconnected
+        - connected
+        - active
+      description: |
+        Narrow the match by profile state. Requires `profile`. Matches if
+        the profile is in ANY listed state. States are orthogonal — a slot
+        has exactly one of unassigned/disconnected/connected, PLUS the
+        active flag if it's the currently selected profile.
+
+          unassigned   — no peer bonded to this slot
+          disconnected — peer bonded but link is down
+          connected    — peer bonded and link is up
+          active       — this slot is the currently selected profile
+
+        If `state` is omitted, the entry matches only when `profile` is the
+        active BLE profile (back-compat default).
+    color:
+      type: array
+      required: true
+      description: "[H S B]: hue 0-360, saturation 0-100, brightness 0-100."
+    effect:
+      type: int
+      required: false
+      default: 0
+      description: |
+        ZMK RGB effect index (see https://zmk.dev/docs/config/lighting).
+        Default 0 (solid).

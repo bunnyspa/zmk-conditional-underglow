@@ -1,0 +1,22 @@
+description: |
+  Internal helper behavior used by zmk-conditional-underglow to broadcast
+  per-BT-profile state from central to peripheral. Not intended for direct
+  use in keymaps.
+
+  param1 packs 5 slot states, 4 bits each:
+    bits[ 0.. 3] = slot 0
+    bits[ 4.. 7] = slot 1
+    bits[ 8..11] = slot 2
+    bits[12..15] = slot 3
+    bits[16..19] = slot 4
+  Each nibble = CU_STATE_* bitmask (unassigned/disconnected/connected/active).
+
+  Instances should set `locality = "global"` so the binding propagates from
+  central to peripheral via ZMK's split behavior queue.
+
+compatible: "zmk,behavior-conditional-underglow-state-sync"
+
+properties:
+  "#binding-cells":
+    type: int
+    const: 1
