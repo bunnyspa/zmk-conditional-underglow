@@ -25,33 +25,29 @@ child-binding:
     endpoint:
       type: string-array
       required: false
-      enum:
-        - ble
-        - usb
       description: |
         Match only when the active output endpoint is in any of the listed
-        transports. Omit = endpoint-agnostic.
+        transports. Allowed values: "ble", "usb". Omit = endpoint-agnostic.
+        (Validated at C-macro expansion; an unknown string fails the build.)
     state:
       type: string-array
       required: false
-      enum:
-        - unassigned
-        - disconnected
-        - connected
-        - active
       description: |
         Narrow the match by profile state. Requires `profile`. Matches if
-        the profile is in ANY listed state. States are orthogonal — a slot
-        has exactly one of unassigned/disconnected/connected, PLUS the
-        active flag if it's the currently selected profile.
+        the profile is in ANY listed state. Allowed values:
 
           unassigned   — no peer bonded to this slot
           disconnected — peer bonded but link is down
           connected    — peer bonded and link is up
           active       — this slot is the currently selected profile
 
+        States are orthogonal — a slot has exactly one of
+        unassigned/disconnected/connected, PLUS the active flag if it's
+        the currently selected profile.
+
         If `state` is omitted, the entry matches only when `profile` is the
         active BLE profile (back-compat default).
+        (Validated at C-macro expansion; an unknown string fails the build.)
     color:
       type: array
       required: true
