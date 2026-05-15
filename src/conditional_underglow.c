@@ -9,6 +9,7 @@
 #include <zmk/event_manager.h>
 #include <zmk/keymap.h>
 #include <zmk/rgb_underglow.h>
+#include <zmk/workqueue.h>
 
 /* "Central role" = not split, or split central. */
 #if !IS_ENABLED(CONFIG_ZMK_SPLIT) || IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
@@ -33,7 +34,6 @@
 
 #if IS_ENABLED(CONFIG_ZMK_SPLIT)
 #include <zmk/behavior.h>
-#include <dt-bindings/zmk/rgb.h>
 #endif
 
 LOG_MODULE_REGISTER(conditional_underglow, CONFIG_ZMK_LOG_LEVEL);
@@ -85,7 +85,6 @@ struct entry_desc {
     uint16_t h;
     uint8_t  s;
     uint8_t  b;
-    uint8_t  effect;
 };
 
 #define ENTRY_DESC(node) {                                                  \
@@ -98,7 +97,6 @@ struct entry_desc {
     .h             = DT_PROP_BY_IDX(node, color, 0),                        \
     .s             = DT_PROP_BY_IDX(node, color, 1),                        \
     .b             = DT_PROP_BY_IDX(node, color, 2),                        \
-    .effect        = DT_PROP_OR(node, effect, 0),                           \
 },
 
 #if DT_NODE_EXISTS(ENTRIES_NODE)
@@ -144,8 +142,6 @@ struct overlay_desc {
 },
 
 #define OVERLAY_ASSERTS(node)                                               \
-    BUILD_ASSERT(!DT_NODE_HAS_PROP(node, effect),                           \
-                 "overlays children cannot set 'effect' (solid-only)");     \
     BUILD_ASSERT(DT_PROP_LEN(node, key_positions) <= MAX_KPS_PER_OVERLAY,   \
                  "overlay key-positions exceeds MAX_KPS_PER_OVERLAY");
 
@@ -174,17 +170,16 @@ static const uint16_t led_map[] = { 0 };
 #define STRIP_NODE       DT_CHOSEN(zmk_underglow)
 #define STRIP_NUM_PIXELS DT_PROP(STRIP_NODE, chain_length)
 
-static const struct device *const strip __maybe_unused = DEVICE_DT_GET(STRIP_NODE);
-static struct led_rgb pixel_buf[STRIP_NUM_PIXELS] __maybe_unused;
+static const struct device *const strip = DEVICE_DT_GET(STRIP_NODE);
+static struct led_rgb pixel_buf[STRIP_NUM_PIXELS];
 
-static bool owns_render = false;
-
-/* Shared state cache. Central computes; cu_state_sync (locality=GLOBAL)
- * forwards the same bytes to peripheral via ZMK's split behavior queue.
+/* Shared state cache. Central computes; cu_state_sync (locality=GLOBAL on
+ * the driver API) forwards the same bytes to peripheral via ZMK's split
+ * behavior queue. Both halves read from here.
  *
  * Payload encoding:
- *   param1: bits[ 0..19] = 5 × 4-bit slot states
- *           bits[20..21] = endpoint mask
+ *   param1: bits[ 0..19] = 5 × 4-bit slot states (CU_STATE_*)
+ *           bits[20..21] = endpoint mask        (CU_ENDPOINT_*)
  *   param2: 32-bit active-layer mask */
 #define CU_NUM_PROFILES 5
 uint8_t  cu_profile_states[CU_NUM_PROFILES];
@@ -234,126 +229,6 @@ static bool selectors_match(bool has_layers, uint32_t layers_mask,
         return (state & CU_STATE_ACTIVE) != 0;
     }
     return (state_mask & state) != 0;
-}
-
-static void apply_local(uint8_t eff, uint16_t h, uint8_t s, uint8_t b) {
-    zmk_rgb_underglow_set_hsb((struct zmk_led_hsb){.h = h, .s = s, .b = b});
-    zmk_rgb_underglow_select_effect(eff);
-}
-
-static void apply_global(uint8_t eff, uint16_t h, uint8_t s, uint8_t b) {
-#if CU_IS_CENTRAL && IS_ENABLED(CONFIG_ZMK_SPLIT)
-    struct zmk_behavior_binding binding = {
-        .behavior_dev = "rgb_ug",
-        .param1 = RGB_COLOR_HSB_CMD,
-        .param2 = RGB_COLOR_HSB_VAL(h, s, b),
-    };
-    struct zmk_behavior_binding_event event = {
-        .layer = 0,
-        .position = 0,
-        .timestamp = k_uptime_get(),
-    };
-    zmk_behavior_invoke_binding(&binding, event, true);
-    zmk_rgb_underglow_select_effect(eff);
-#else
-    apply_local(eff, h, s, b);
-#endif
-}
-
-static void release_owned_render(void) {
-    if (owns_render) {
-        zmk_rgb_underglow_on();
-        owns_render = false;
-    }
-}
-
-static void enter_owned_render(void) {
-    if (!owns_render) {
-        zmk_rgb_underglow_off();
-        owns_render = true;
-    }
-}
-
-static int resolve_and_render(const zmk_event_t *eh) {
-    ARG_UNUSED(eh);
-
-    const struct entry_desc *bg = NULL;
-    for (size_t i = 0; i < N_ENTRIES; i++) {
-        if (selectors_match(entries[i].has_layers, entries[i].layers_mask,
-                            entries[i].has_profile, entries[i].profile,
-                            entries[i].state_mask, entries[i].endpoint_mask)) {
-            bg = &entries[i];
-        }
-    }
-
-    uint16_t bg_h;
-    uint8_t  bg_s, bg_b, bg_eff;
-    if (bg) {
-        bg_h = bg->h; bg_s = bg->s; bg_b = bg->b;
-        bg_eff = bg->effect;
-    } else {
-        bg_h   = CONFIG_ZMK_RGB_UNDERGLOW_HUE_START;
-        bg_s   = CONFIG_ZMK_RGB_UNDERGLOW_SAT_START;
-        bg_b   = CONFIG_ZMK_RGB_UNDERGLOW_BRT_START;
-        bg_eff = CONFIG_ZMK_RGB_UNDERGLOW_EFF_START;
-    }
-
-    size_t matched = 0;
-    for (size_t i = 0; i < N_OVERLAYS; i++) {
-        if (selectors_match(overlays[i].has_layers, overlays[i].layers_mask,
-                            overlays[i].has_profile, overlays[i].profile,
-                            overlays[i].state_mask, overlays[i].endpoint_mask)) {
-            matched++;
-        }
-    }
-
-    if (matched == 0) {
-        release_owned_render();
-#if CU_IS_CENTRAL
-        apply_global(bg_eff, bg_h, bg_s, bg_b);
-#else
-        /* Peripheral: don't touch the bg. Central drives whole-strip color
-         * via &rgb_ug split sync; touching it here would race. */
-        ARG_UNUSED(bg_eff);
-#endif
-        return ZMK_EV_EVENT_BUBBLE;
-    }
-
-    enter_owned_render();
-    struct led_rgb bg_rgb = hsb_to_rgb(bg_h, bg_s, bg_b);
-    for (size_t i = 0; i < STRIP_NUM_PIXELS; i++) {
-        pixel_buf[i] = bg_rgb;
-    }
-    for (size_t i = 0; i < N_OVERLAYS; i++) {
-        const struct overlay_desc *o = &overlays[i];
-        if (!selectors_match(o->has_layers, o->layers_mask,
-                             o->has_profile, o->profile,
-                             o->state_mask, o->endpoint_mask)) continue;
-        struct led_rgb c = hsb_to_rgb(o->h, o->s, o->b);
-        for (size_t j = 0; j < o->kp_count; j++) {
-            uint16_t kp = o->kps[j];
-            if (kp >= LED_MAP_LEN) continue;
-            uint16_t led = led_map[kp];
-            if (led == 0xFFFF) continue;
-            if (led >= STRIP_NUM_PIXELS) continue;
-            pixel_buf[led] = c;
-        }
-    }
-    led_strip_update_rgb(strip, pixel_buf, STRIP_NUM_PIXELS);
-    return ZMK_EV_EVENT_BUBBLE;
-}
-
-/* Render trigger. Used by the cu_state_sync behavior handler on peripheral
- * (after it decodes the broadcast into the cache). */
-static struct k_work cu_resolve_work;
-
-static void cu_resolve_work_handler(struct k_work *w) {
-    ARG_UNUSED(w);
-    resolve_and_render(NULL);
-}
-
-void cu_request_render(void) {
-    k_work_submit(&cu_resolve_work);
 }
 
 #if CU_IS_CENTRAL
@@ -414,32 +289,109 @@ static void push_state(void) {
     };
     zmk_behavior_invoke_binding(&binding, event, true);
 }
-
-static int cu_event_listener(const zmk_event_t *eh) {
-    ARG_UNUSED(eh);
-    push_state();
-    resolve_and_render(NULL);
-    return ZMK_EV_EVENT_BUBBLE;
-}
 #endif /* CU_IS_CENTRAL */
 
-static int conditional_underglow_init(void) {
-    k_work_init(&cu_resolve_work, cu_resolve_work_handler);
+/* Pixel render. Runs on ZMK's lowprio workqueue — same queue ZMK's
+ * underglow off-handler uses, so our paint is serialized after the
+ * one-shot clear at init. */
+static void render(void) {
+    /* Resolve bg from entries (last match wins). */
+    const struct entry_desc *bg = NULL;
+    for (size_t i = 0; i < N_ENTRIES; i++) {
+        if (selectors_match(entries[i].has_layers, entries[i].layers_mask,
+                            entries[i].has_profile, entries[i].profile,
+                            entries[i].state_mask, entries[i].endpoint_mask)) {
+            bg = &entries[i];
+        }
+    }
+
+    uint16_t bg_h;
+    uint8_t  bg_s, bg_b;
+    if (bg) {
+        bg_h = bg->h; bg_s = bg->s; bg_b = bg->b;
+    } else {
+        bg_h = CONFIG_ZMK_RGB_UNDERGLOW_HUE_START;
+        bg_s = CONFIG_ZMK_RGB_UNDERGLOW_SAT_START;
+        bg_b = CONFIG_ZMK_RGB_UNDERGLOW_BRT_START;
+    }
+
+    struct led_rgb bg_rgb = hsb_to_rgb(bg_h, bg_s, bg_b);
+    for (size_t i = 0; i < STRIP_NUM_PIXELS; i++) {
+        pixel_buf[i] = bg_rgb;
+    }
+
+    /* Paint matching overlays. Later DT entries overwrite earlier ones on
+     * the same pixel. kps mapped to 0xFFFF (other half / no LED) are
+     * silently skipped. */
+    for (size_t i = 0; i < N_OVERLAYS; i++) {
+        const struct overlay_desc *o = &overlays[i];
+        if (!selectors_match(o->has_layers, o->layers_mask,
+                             o->has_profile, o->profile,
+                             o->state_mask, o->endpoint_mask)) continue;
+        struct led_rgb c = hsb_to_rgb(o->h, o->s, o->b);
+        for (size_t j = 0; j < o->kp_count; j++) {
+            uint16_t kp = o->kps[j];
+            if (kp >= LED_MAP_LEN) continue;
+            uint16_t led = led_map[kp];
+            if (led == 0xFFFF) continue;
+            if (led >= STRIP_NUM_PIXELS) continue;
+            pixel_buf[led] = c;
+        }
+    }
+
+    led_strip_update_rgb(strip, pixel_buf, STRIP_NUM_PIXELS);
+}
+
+static struct k_work cu_render_work;
+
+static void cu_render_work_handler(struct k_work *w) {
+    ARG_UNUSED(w);
 #if CU_IS_CENTRAL
-    apply_local(CONFIG_ZMK_RGB_UNDERGLOW_EFF_START,
-                CONFIG_ZMK_RGB_UNDERGLOW_HUE_START,
-                CONFIG_ZMK_RGB_UNDERGLOW_SAT_START,
-                CONFIG_ZMK_RGB_UNDERGLOW_BRT_START);
+    push_state();
+#endif
+    render();
+}
+
+void cu_request_render(void) {
+    /* Lowprio workqueue: ZMK's `zmk_rgb_underglow_off` queues its strip-clear
+     * handler here. Submitting our render to the same queue guarantees it
+     * runs AFTER the clear (FIFO), so the clear never wipes our paint. */
+    k_work_submit_to_queue(zmk_workqueue_lowprio_work_q(), &cu_render_work);
+}
+
+#if CU_IS_CENTRAL
+static int cu_event_listener(const zmk_event_t *eh) {
+    ARG_UNUSED(eh);
+    cu_request_render();
+    return ZMK_EV_EVENT_BUBBLE;
+}
+#endif
+
+static int conditional_underglow_init(void) {
+    k_work_init(&cu_render_work, cu_render_work_handler);
+
+    /* Take exclusive ownership of the strip. ZMK's effect-tick timer is
+     * cancelled and a one-shot clear is queued on the lowprio workqueue;
+     * our render (also lowprio) will run after it and paint our pixels. */
+    zmk_rgb_underglow_off();
+
+#if CU_IS_CENTRAL
     cu_layer_mask = compute_layer_mask();
     cu_current_endpoint = compute_endpoint();
 #endif
+
+    /* Initial paint. On central: render against current state. On
+     * peripheral: render against the default-zero cache, which will produce
+     * _START bg (no entry matches without a synced layer mask). Peripheral
+     * is updated as soon as central pushes its first cu_state_sync. */
+    cu_request_render();
     return 0;
 }
 SYS_INIT(conditional_underglow_init, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);
 
-/* ZMK events fire only on central — peripheral lacks the keymap/BLE plumbing
- * needed to raise them. Peripheral updates via the cu_state_sync behavior
- * handler instead. */
+/* ZMK events fire only on central — peripheral lacks the keymap/BLE plumbing.
+ * Peripheral updates via the cu_state_sync behavior handler, which calls
+ * cu_request_render() after decoding the broadcast into the cache. */
 #if CU_IS_CENTRAL
 ZMK_LISTENER(conditional_underglow, cu_event_listener);
 ZMK_SUBSCRIPTION(conditional_underglow, zmk_layer_state_changed);
