@@ -11,6 +11,10 @@
 #include <zmk/rgb_underglow.h>
 #include <zmk/workqueue.h>
 
+#if IS_ENABLED(CONFIG_ZMK_EXT_POWER)
+#include <zmk/ext_power.h>
+#endif
+
 /* "Central role" = not split, or split central. */
 #if !IS_ENABLED(CONFIG_ZMK_SPLIT) || IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
 #define CU_IS_CENTRAL 1
@@ -427,6 +431,19 @@ static int conditional_underglow_init(void) {
      * cancelled and a one-shot clear is queued on the lowprio workqueue;
      * our render (also lowprio) will run after it and paint our pixels. */
     zmk_rgb_underglow_off();
+
+    /* Force EXT_POWER on so the LED strip has its full VCC. Without this,
+     * the strip's supply rail can collapse (gated MOSFET on nice_nano_v2
+     * P0.13), leaving the SK6812s running on parasitic voltage bled through
+     * the SPI MOSI ESD diode (~2.7V vs the ~3.3V needed for the blue die).
+     * That manifests as: bright correct color at reset, then settling to a
+     * dim red-tinted version (blue dies first, then green, leaving red). */
+#if IS_ENABLED(CONFIG_ZMK_EXT_POWER) && DT_HAS_COMPAT_STATUS_OKAY(zmk_ext_power_generic)
+    const struct device *ext = DEVICE_DT_GET_ANY(zmk_ext_power_generic);
+    if (ext && device_is_ready(ext)) {
+        ext_power_enable(ext);
+    }
+#endif
 
 #if CU_IS_CENTRAL
     cu_layer_mask = compute_layer_mask();
