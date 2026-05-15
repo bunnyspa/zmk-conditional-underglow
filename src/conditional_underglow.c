@@ -367,8 +367,21 @@ static int cu_event_listener(const zmk_event_t *eh) {
 }
 #endif
 
+/* settings_load() runs in main() AFTER all SYS_INIT. If the saved underglow
+ * state had state.on=true, ZMK's rgb_settings_set() will restart the effect
+ * tick timer, undoing our SYS_INIT-time _off(). Schedule a delayed reclaim
+ * to call _off() again well after main has had time to load settings. */
+static struct k_work_delayable cu_reclaim_work;
+
+static void cu_reclaim_handler(struct k_work *w) {
+    ARG_UNUSED(w);
+    zmk_rgb_underglow_off();
+    cu_request_render();
+}
+
 static int conditional_underglow_init(void) {
     k_work_init(&cu_render_work, cu_render_work_handler);
+    k_work_init_delayable(&cu_reclaim_work, cu_reclaim_handler);
 
     /* Take exclusive ownership of the strip. ZMK's effect-tick timer is
      * cancelled and a one-shot clear is queued on the lowprio workqueue;
@@ -385,9 +398,15 @@ static int conditional_underglow_init(void) {
      * _START bg (no entry matches without a synced layer mask). Peripheral
      * is updated as soon as central pushes its first cu_state_sync. */
     cu_request_render();
+
+    /* 500ms is comfortably past main's settings_subsys_init+settings_load. */
+    k_work_schedule(&cu_reclaim_work, K_MSEC(500));
     return 0;
 }
-SYS_INIT(conditional_underglow_init, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);
+/* Priority offset puts our init AFTER ZMK's rgb_underglow_init in the
+ * APPLICATION level, so its effect-tick timer is running when our _off()
+ * stops it (instead of stopping nothing and then having ZMK start it). */
+SYS_INIT(conditional_underglow_init, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY + 10);
 
 /* ZMK events fire only on central — peripheral lacks the keymap/BLE plumbing.
  * Peripheral updates via the cu_state_sync behavior handler, which calls
