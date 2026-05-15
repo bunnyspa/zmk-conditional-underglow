@@ -1,0 +1,19 @@
+description: |
+  Internal helper behavior used by zmk-conditional-underglow to broadcast
+  per-BT-profile state, endpoint, and active-layer mask from central to
+  peripheral. Not intended for direct use in keymaps.
+
+  Payload packed across the binding params:
+    param1: bits[ 0..19] = 5 × 4-bit slot states (CU_STATE_*)
+            bits[20..21] = endpoint mask        (CU_ENDPOINT_*)
+    param2: 32-bit active-layer mask
+
+  Forwarding to peripheral is gated by `.locality = BEHAVIOR_LOCALITY_GLOBAL`
+  on the C driver API struct (ZMK reads this, not the DT property).
+
+compatible: "zmk,behavior-conditional-underglow-state-sync"
+
+properties:
+  "#binding-cells":
+    type: int
+    const: 1

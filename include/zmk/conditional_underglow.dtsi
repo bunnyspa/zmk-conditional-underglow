@@ -1,4 +1,15 @@
 / {
+    behaviors {
+        /* Internal: state sync from central to peripheral. Don't reference
+         * in keymaps. Forwarding to peripheral is enabled by the
+         * `.locality = BEHAVIOR_LOCALITY_GLOBAL` field in the driver API
+         * struct (DT `locality` property is unread by ZMK). */
+        cu_state_sync: behavior_conditional_underglow_state_sync {
+            compatible = "zmk,behavior-conditional-underglow-state-sync";
+            #binding-cells = <1>;
+        };
+    };
+
     conditional_underglow: conditional_underglow {
         compatible = "zmk,conditional-underglow";
 
