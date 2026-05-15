@@ -12,7 +12,7 @@
 #include <zmk/workqueue.h>
 
 #if IS_ENABLED(CONFIG_ZMK_EXT_POWER)
-#include <zmk/ext_power.h>
+#include <drivers/ext_power.h>
 #endif
 
 /* "Central role" = not split, or split central. */
