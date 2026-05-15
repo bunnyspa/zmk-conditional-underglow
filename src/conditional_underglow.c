@@ -7,38 +7,23 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>
 #include <zmk/event_manager.h>
+#include <zmk/events/layer_state_changed.h>
 #include <zmk/keymap.h>
 #include <zmk/rgb_underglow.h>
 
-/* "Central role" = not split, or split central. Peripheral lacks BLE profile
- * state and cannot broadcast via behavior bindings. */
-#if !IS_ENABLED(CONFIG_ZMK_SPLIT) || IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
-#define CU_IS_CENTRAL 1
-#else
-#define CU_IS_CENTRAL 0
-#endif
-
-#if CU_IS_CENTRAL
-#include <zmk/events/layer_state_changed.h>
-#endif
-
-#if CU_IS_CENTRAL && IS_ENABLED(CONFIG_ZMK_BLE)
+#if IS_ENABLED(CONFIG_ZMK_BLE)
 #include <zmk/ble.h>
 #include <zmk/events/ble_active_profile_changed.h>
 #endif
 
-#if CU_IS_CENTRAL && IS_ENABLED(CONFIG_ZMK_USB)
+#if IS_ENABLED(CONFIG_ZMK_USB)
 #include <zmk/endpoints.h>
 #include <zmk/events/endpoint_changed.h>
 #endif
 
-#if CU_IS_CENTRAL && IS_ENABLED(CONFIG_ZMK_SPLIT)
+#if IS_ENABLED(CONFIG_ZMK_SPLIT)
 #include <zmk/behavior.h>
 #include <dt-bindings/zmk/rgb.h>
-#endif
-
-#if CU_IS_CENTRAL && IS_ENABLED(CONFIG_ZMK_BLE)
-#include <zephyr/bluetooth/conn.h>
 #endif
 
 LOG_MODULE_REGISTER(conditional_underglow, CONFIG_ZMK_LOG_LEVEL);
@@ -209,41 +194,59 @@ static struct led_rgb hsb_to_rgb(uint16_t h, uint8_t s, uint8_t b) {
     };
 }
 
-/* Shared state cache. Central computes and broadcasts via the cu_state_sync
- * behavior; peripheral receives and stores. Both halves read from here in
- * selectors_match / any_layer_active.
- *
- * Encoding in cu_state_sync's binding params:
- *   param1: bits[0..19]  = 5 × 4-bit slot states (CU_STATE_*)
- *           bits[20..21] = endpoint mask        (CU_ENDPOINT_*)
- *   param2: 32-bit active-layer mask (bit N = layer N is currently active)
- *
- * Layer state is split-managed by ZMK on central only — peripheral has no
- * zmk_keymap_layer_active. So we ship it via param2 instead. */
-#define CU_NUM_PROFILES 5
-uint8_t  cu_profile_states[CU_NUM_PROFILES];
-uint8_t  cu_current_endpoint = CU_ENDPOINT_BLE;
-uint32_t cu_layer_mask;
-
 static bool any_layer_active(uint32_t mask) {
-    return (mask & cu_layer_mask) != 0;
+    while (mask) {
+        uint8_t i = __builtin_ctz(mask);
+        if (zmk_keymap_layer_active(i)) return true;
+        mask &= ~BIT(i);
+    }
+    return false;
+}
+
+#if IS_ENABLED(CONFIG_ZMK_BLE)
+static uint8_t profile_state(uint8_t i) {
+    uint8_t s;
+    if (zmk_ble_profile_is_open(i)) {
+        s = CU_STATE_UNASSIGNED;
+    } else if (zmk_ble_profile_is_connected(i)) {
+        s = CU_STATE_CONNECTED;
+    } else {
+        s = CU_STATE_DISCONNECTED;
+    }
+    if (i == zmk_ble_active_profile_index()) s |= CU_STATE_ACTIVE;
+    return s;
+}
+#endif
+
+static uint8_t current_endpoint(void) {
+#if IS_ENABLED(CONFIG_ZMK_USB)
+    return (zmk_endpoints_selected().transport == ZMK_TRANSPORT_USB)
+               ? CU_ENDPOINT_USB
+               : CU_ENDPOINT_BLE;
+#else
+    return CU_ENDPOINT_BLE;
+#endif
 }
 
 static bool selectors_match(bool has_layers, uint32_t layers_mask,
                             bool has_profile, uint8_t profile,
                             uint8_t state_mask, uint8_t endpoint_mask) {
     if (has_layers && !any_layer_active(layers_mask)) return false;
-    if (endpoint_mask != 0 && !(endpoint_mask & cu_current_endpoint)) return false;
+    if (endpoint_mask != 0 && !(endpoint_mask & current_endpoint())) return false;
     if (!has_profile) return true;
-    if (profile >= CU_NUM_PROFILES) return false;
-    uint8_t state = cu_profile_states[profile];
+#if IS_ENABLED(CONFIG_ZMK_BLE)
     if (state_mask == 0) {
-        /* Back-compat: profile-only = "active BLE profile". Requires BLE
+        /* Back-compat: profile-only = active BLE profile. Requires BLE
          * endpoint (USB use shouldn't trigger profile entries). */
-        if (!(cu_current_endpoint & CU_ENDPOINT_BLE)) return false;
-        return (state & CU_STATE_ACTIVE) != 0;
+        if (current_endpoint() != CU_ENDPOINT_BLE) return false;
+        return zmk_ble_active_profile_index() == profile;
     }
-    return (state_mask & state) != 0;
+    return (state_mask & profile_state(profile)) != 0;
+#else
+    ARG_UNUSED(profile);
+    ARG_UNUSED(state_mask);
+    return false;
+#endif
 }
 
 static void apply_local(uint8_t eff, uint16_t h, uint8_t s, uint8_t b) {
@@ -252,7 +255,7 @@ static void apply_local(uint8_t eff, uint16_t h, uint8_t s, uint8_t b) {
 }
 
 static void apply_global(uint8_t eff, uint16_t h, uint8_t s, uint8_t b) {
-#if CU_IS_CENTRAL && IS_ENABLED(CONFIG_ZMK_SPLIT)
+#if IS_ENABLED(CONFIG_ZMK_SPLIT)
     struct zmk_behavior_binding binding = {
         .behavior_dev = "rgb_ug",
         .param1 = RGB_COLOR_HSB_CMD,
@@ -319,13 +322,7 @@ static int resolve_and_render(const zmk_event_t *eh) {
 
     if (matched == 0) {
         release_owned_render();
-#if CU_IS_CENTRAL
         apply_global(bg_eff, bg_h, bg_s, bg_b);
-#else
-        /* Peripheral: don't touch background. Central drives whole-strip
-         * color via &rgb_ug split sync; touching it here would race. */
-        ARG_UNUSED(bg_eff);
-#endif
         return ZMK_EV_EVENT_BUBBLE;
     }
 
@@ -353,139 +350,20 @@ static int resolve_and_render(const zmk_event_t *eh) {
     return ZMK_EV_EVENT_BUBBLE;
 }
 
-/* All event paths (BT callbacks, ZMK events) funnel through this work item.
- * On central, the handler first refreshes the state cache from the live BLE
- * API and broadcasts it to peripheral via cu_state_sync, then renders.
- * On peripheral, the handler just renders against the latest cached state
- * that was pushed in by the cu_state_sync behavior handler. */
-static struct k_work cu_resolve_work;
-
-void cu_request_render(void) {
-    k_work_submit(&cu_resolve_work);
-}
-
-#if CU_IS_CENTRAL
-static uint32_t compute_layer_mask(void) {
-    uint32_t m = 0;
-    for (uint8_t i = 0; i < 32; i++) {
-        if (zmk_keymap_layer_active(i)) m |= BIT(i);
-    }
-    return m;
-}
-#endif
-
-#if CU_IS_CENTRAL && IS_ENABLED(CONFIG_ZMK_BLE)
-static uint8_t compute_slot_state(uint8_t i) {
-    uint8_t s;
-    if (zmk_ble_profile_is_open(i)) {
-        s = CU_STATE_UNASSIGNED;
-    } else if (zmk_ble_profile_is_connected(i)) {
-        s = CU_STATE_CONNECTED;
-    } else {
-        s = CU_STATE_DISCONNECTED;
-    }
-    if (i == zmk_ble_active_profile_index()) s |= CU_STATE_ACTIVE;
-    return s;
-}
-
-static uint8_t compute_endpoint(void) {
-#if IS_ENABLED(CONFIG_ZMK_USB)
-    return (zmk_endpoints_selected().transport == ZMK_TRANSPORT_USB)
-               ? CU_ENDPOINT_USB
-               : CU_ENDPOINT_BLE;
-#else
-    return CU_ENDPOINT_BLE;
-#endif
-}
-
-static void push_state_to_peripheral(void) {
-    uint32_t encoded1 = 0;
-    for (int i = 0; i < CU_NUM_PROFILES; i++) {
-        cu_profile_states[i] = compute_slot_state(i);
-        encoded1 |= ((uint32_t)(cu_profile_states[i] & 0xF)) << (i * 4);
-    }
-    cu_current_endpoint = compute_endpoint();
-    encoded1 |= ((uint32_t)(cu_current_endpoint & 0x3)) << 20;
-    cu_layer_mask = compute_layer_mask();
-    struct zmk_behavior_binding binding = {
-        .behavior_dev = "cu_state_sync",
-        .param1 = encoded1,
-        .param2 = cu_layer_mask,
-    };
-    struct zmk_behavior_binding_event event = {
-        .layer = 0,
-        .position = 0,
-        .timestamp = k_uptime_get(),
-    };
-    zmk_behavior_invoke_binding(&binding, event, true);
-}
-#endif
-
-static void cu_resolve_work_handler(struct k_work *w) {
-    ARG_UNUSED(w);
-#if CU_IS_CENTRAL && IS_ENABLED(CONFIG_ZMK_BLE)
-    push_state_to_peripheral();
-#endif
-    resolve_and_render(NULL);
-}
-
-#if CU_IS_CENTRAL && IS_ENABLED(CONFIG_ZMK_BLE)
-/* bt_conn_cb runs in the BT thread; defer to the system workqueue. */
-static void cu_bt_connected(struct bt_conn *conn, uint8_t err) {
-    ARG_UNUSED(conn);
-    ARG_UNUSED(err);
-    cu_request_render();
-}
-
-static void cu_bt_disconnected(struct bt_conn *conn, uint8_t reason) {
-    ARG_UNUSED(conn);
-    ARG_UNUSED(reason);
-    cu_request_render();
-}
-
-BT_CONN_CB_DEFINE(cu_bt_cb) = {
-    .connected = cu_bt_connected,
-    .disconnected = cu_bt_disconnected,
-};
-#endif
-
-#if CU_IS_CENTRAL
-static int cu_event_listener(const zmk_event_t *eh) {
-    ARG_UNUSED(eh);
-    cu_request_render();
-    return ZMK_EV_EVENT_BUBBLE;
-}
-#endif
-
 static int conditional_underglow_init(void) {
-    k_work_init(&cu_resolve_work, cu_resolve_work_handler);
-#if CU_IS_CENTRAL
     apply_local(CONFIG_ZMK_RGB_UNDERGLOW_EFF_START,
                 CONFIG_ZMK_RGB_UNDERGLOW_HUE_START,
                 CONFIG_ZMK_RGB_UNDERGLOW_SAT_START,
                 CONFIG_ZMK_RGB_UNDERGLOW_BRT_START);
-    cu_layer_mask = compute_layer_mask();
-#if IS_ENABLED(CONFIG_ZMK_BLE)
-    cu_current_endpoint = compute_endpoint();
-#endif
-    /* Initial profile-state push is deferred to the first
-     * ble_active_profile_changed / endpoint_changed / layer_state_changed
-     * event — BLE may not be fully up yet at SYS_INIT time. */
-#endif
     return 0;
 }
 SYS_INIT(conditional_underglow_init, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);
 
-/* Event subscriptions are central-only. Peripheral lacks ZMK's keymap/event
- * machinery (zmk_event_zmk_layer_state_changed isn't linked there); it gets
- * all relevant state via cu_state_sync's behavior invocation instead. */
-#if CU_IS_CENTRAL
-ZMK_LISTENER(conditional_underglow, cu_event_listener);
+ZMK_LISTENER(conditional_underglow, resolve_and_render);
 ZMK_SUBSCRIPTION(conditional_underglow, zmk_layer_state_changed);
 #if IS_ENABLED(CONFIG_ZMK_BLE)
 ZMK_SUBSCRIPTION(conditional_underglow, zmk_ble_active_profile_changed);
 #endif
 #if IS_ENABLED(CONFIG_ZMK_USB)
 ZMK_SUBSCRIPTION(conditional_underglow, zmk_endpoint_changed);
-#endif
 #endif
