@@ -403,11 +403,7 @@ static int conditional_underglow_init(void) {
     k_work_schedule(&cu_reclaim_work, K_MSEC(500));
     return 0;
 }
-/* Priority offset puts our init AFTER ZMK's rgb_underglow_init in the
- * APPLICATION level, so its effect-tick timer is running when our _off()
- * stops it (instead of stopping nothing and then having ZMK start it).
- * +1 is enough; +10 would overflow Zephyr's 0..99 priority range. */
-SYS_INIT(conditional_underglow_init, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY + 1);
+SYS_INIT(conditional_underglow_init, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);
 
 /* ZMK events fire only on central — peripheral lacks the keymap/BLE plumbing.
  * Peripheral updates via the cu_state_sync behavior handler, which calls
