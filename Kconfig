@@ -1,8 +1,3 @@
 config ZMK_CONDITIONAL_UNDERGLOW
 	bool "Conditional RGB underglow (layer + BT profile)"
 	depends on ZMK_RGB_UNDERGLOW
-
-config ZMK_CONDITIONAL_UNDERGLOW_LAYER_CENTRAL_ONLY
-	bool "Only apply layer-triggered underglow changes to central half"
-	depends on ZMK_CONDITIONAL_UNDERGLOW && ZMK_SPLIT
-	default n

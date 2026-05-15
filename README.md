@@ -87,9 +87,8 @@ profile/endpoint selectors only ever match on central.
 
 | Situation | What central does | What peripheral does |
 |---|---|---|
-| Whole-strip entry, layer-scoped, `LAYER_CENTRAL_ONLY=y` | Apply locally | Resolves locally and applies (no sync needed) |
-| Whole-strip entry, layer-scoped, default | Apply via `&rgb_ug` (syncs) | Receives sync; ALSO resolves layer locally — same color, harmless redundancy |
-| Whole-strip entry, profile-scoped | Apply via `&rgb_ug` (syncs) | Receives sync. Cannot resolve profile locally → does nothing on the bg axis |
+| Whole-strip entry, no overlay match | Apply via `&rgb_ug` (syncs) | Receives sync (peripheral's `matched == 0` path is a no-op; central is the source of truth) |
+| Whole-strip entry + overlay match | Owned render (paints bg+overlays locally) | Owned render (same — paints bg+overlays locally against its synced state cache) |
 | Default fallback (`_START`) | Apply via `&rgb_ug` (syncs) | Receives sync |
 | Overlay matches on this half's `led-map` | Owned render | Owned render |
 | Overlay's kps all map to `0xFFFF` on this half | No overlay on this strip | No overlay on this strip |
@@ -143,9 +142,6 @@ CONFIG_ZMK_RGB_UNDERGLOW_HUE_START=0
 CONFIG_ZMK_RGB_UNDERGLOW_SAT_START=0
 CONFIG_ZMK_RGB_UNDERGLOW_BRT_START=25
 
-# Optional (split keyboards): set to y to keep layer-scoped whole-strip colors
-# on central only
-# CONFIG_ZMK_CONDITIONAL_UNDERGLOW_LAYER_CENTRAL_ONLY=n
 ```
 
 ### `<keyboard>.overlay` (central half only on split)

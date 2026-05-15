@@ -298,17 +298,14 @@ static int resolve_and_render(const zmk_event_t *eh) {
 
     uint16_t bg_h;
     uint8_t  bg_s, bg_b, bg_eff;
-    bool     bg_layer_scoped;
     if (bg) {
         bg_h = bg->h; bg_s = bg->s; bg_b = bg->b;
         bg_eff = bg->effect;
-        bg_layer_scoped = bg->has_layers;
     } else {
         bg_h   = CONFIG_ZMK_RGB_UNDERGLOW_HUE_START;
         bg_s   = CONFIG_ZMK_RGB_UNDERGLOW_SAT_START;
         bg_b   = CONFIG_ZMK_RGB_UNDERGLOW_BRT_START;
         bg_eff = CONFIG_ZMK_RGB_UNDERGLOW_EFF_START;
-        bg_layer_scoped = false;
     }
 
     size_t matched = 0;
@@ -323,20 +320,11 @@ static int resolve_and_render(const zmk_event_t *eh) {
     if (matched == 0) {
         release_owned_render();
 #if CU_IS_CENTRAL
-#if IS_ENABLED(CONFIG_ZMK_CONDITIONAL_UNDERGLOW_LAYER_CENTRAL_ONLY)
-        if (bg_layer_scoped) {
-            apply_local(bg_eff, bg_h, bg_s, bg_b);
-        } else {
-            apply_global(bg_eff, bg_h, bg_s, bg_b);
-        }
-#else
         apply_global(bg_eff, bg_h, bg_s, bg_b);
-#endif
 #else
         /* Peripheral: don't touch background. Central drives whole-strip
          * color via &rgb_ug split sync; touching it here would race. */
         ARG_UNUSED(bg_eff);
-        ARG_UNUSED(bg_layer_scoped);
 #endif
         return ZMK_EV_EVENT_BUBBLE;
     }

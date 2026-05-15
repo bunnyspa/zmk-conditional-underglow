@@ -16,8 +16,8 @@ description: |
   rendering: it stops the effect loop and writes pixels directly, with later
   overlays overwriting earlier ones on the same pixel.
 
-  Per-LED overlays are central-only on split keyboards. Whole-strip backgrounds
-  still respect CONFIG_ZMK_CONDITIONAL_UNDERGLOW_LAYER_CENTRAL_ONLY.
+  On split keyboards both halves resolve overlays locally against a shared
+  state cache that's synced from central via the cu_state_sync behavior.
 
 compatible: "zmk,conditional-underglow"
 
