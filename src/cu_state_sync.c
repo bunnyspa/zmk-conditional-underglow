@@ -53,6 +53,9 @@ static int on_keymap_binding_released(struct zmk_behavior_binding *binding,
 static const struct behavior_driver_api driver_api = {
     .binding_pressed = on_keymap_binding_pressed,
     .binding_released = on_keymap_binding_released,
+    /* Forward to peripheral via split RUN_BEHAVIOR GATT char. ZMK reads
+     * locality from this struct field, NOT from the DT `locality` property. */
+    .locality = BEHAVIOR_LOCALITY_GLOBAL,
 };
 
 BEHAVIOR_DT_INST_DEFINE(0, behavior_cu_state_sync_init, NULL, NULL, NULL,

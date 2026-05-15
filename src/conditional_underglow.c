@@ -46,16 +46,10 @@ LOG_MODULE_REGISTER(conditional_underglow, CONFIG_ZMK_LOG_LEVEL);
 #define ENTRIES_NODE  DT_INST_CHILD(0, entries)
 #define OVERLAYS_NODE DT_INST_CHILD(0, overlays)
 
-/* Array-property presence detector. `DT_NODE_HAS_PROP` mis-handles array
- * types in this Zephyr version (returns 0 even when the property is set
- * via an `&label { prop = <...>; };` override), so we probe the first cell
- * with `DT_PROP_HAS_IDX` instead, which works reliably. */
-#define HAS_PROP_ARRAY(node, prop) DT_PROP_HAS_IDX(node, prop, 0)
-
 /* layers -> bitmask (zero if 'layers' absent) */
 #define LAYER_BIT(node, prop, idx) | BIT(DT_PROP_BY_IDX(node, prop, idx))
 #define LAYERS_MASK(node) (0                                                \
-    COND_CODE_1(HAS_PROP_ARRAY(node, layers),                               \
+    COND_CODE_1(DT_NODE_HAS_PROP(node, layers),                             \
         (DT_FOREACH_PROP_ELEM(node, layers, LAYER_BIT)), ()))
 
 /* BT profile state bits. A slot's actual state is exactly one of
@@ -68,11 +62,11 @@ LOG_MODULE_REGISTER(conditional_underglow, CONFIG_ZMK_LOG_LEVEL);
 #define STATE_BIT(node, prop, idx) \
     | UTIL_CAT(CU_STATE_, DT_STRING_UPPER_TOKEN_BY_IDX(node, prop, idx))
 #define STATE_MASK(node) ((uint8_t)(0                                       \
-    COND_CODE_1(HAS_PROP_ARRAY(node, state),                                \
+    COND_CODE_1(DT_NODE_HAS_PROP(node, state),                              \
         (DT_FOREACH_PROP_ELEM(node, state, STATE_BIT)), ())))
 
 #define STATE_NEEDS_PROFILE(node)                                           \
-    BUILD_ASSERT(!HAS_PROP_ARRAY(node, state)                               \
+    BUILD_ASSERT(!DT_NODE_HAS_PROP(node, state)                             \
                  || DT_NODE_HAS_PROP(node, profile),                        \
                  "'state' requires 'profile' on conditional_underglow child");
 
@@ -83,7 +77,7 @@ LOG_MODULE_REGISTER(conditional_underglow, CONFIG_ZMK_LOG_LEVEL);
 #define ENDPOINT_BIT(node, prop, idx) \
     | UTIL_CAT(CU_ENDPOINT_, DT_STRING_UPPER_TOKEN_BY_IDX(node, prop, idx))
 #define ENDPOINT_MASK(node) ((uint8_t)(0                                    \
-    COND_CODE_1(HAS_PROP_ARRAY(node, endpoint),                             \
+    COND_CODE_1(DT_NODE_HAS_PROP(node, endpoint),                           \
         (DT_FOREACH_PROP_ELEM(node, endpoint, ENDPOINT_BIT)), ())))
 
 struct entry_desc {
@@ -101,7 +95,7 @@ struct entry_desc {
 
 #define ENTRY_DESC(node) {                                                  \
     .layers_mask   = LAYERS_MASK(node),                                     \
-    .has_layers    = HAS_PROP_ARRAY(node, layers),                          \
+    .has_layers    = DT_NODE_HAS_PROP(node, layers),                        \
     .has_profile   = DT_NODE_HAS_PROP(node, profile),                       \
     .profile       = DT_PROP_OR(node, profile, 0),                          \
     .state_mask    = STATE_MASK(node),                                      \
@@ -142,7 +136,7 @@ struct overlay_desc {
 
 #define OVERLAY_DESC(node) {                                                \
     .layers_mask   = LAYERS_MASK(node),                                     \
-    .has_layers    = HAS_PROP_ARRAY(node, layers),                          \
+    .has_layers    = DT_NODE_HAS_PROP(node, layers),                        \
     .has_profile   = DT_NODE_HAS_PROP(node, profile),                       \
     .profile       = DT_PROP_OR(node, profile, 0),                          \
     .state_mask    = STATE_MASK(node),                                      \
