@@ -19,9 +19,13 @@
     conditional_underglow: conditional_underglow {
         compatible = "zmk,conditional-underglow";
 
-        /* Placeholder so the DT_N_*_P_led_map macro is always emitted. Board
-         * overlays replace this value via `&conditional_underglow { led-map = <...>; };`. */
-        led-map = <0xFFFF>;
+        /* Placeholder so the DT_N_*_P_map macro is always emitted. Board
+         * overlays replace this value via `&conditional_underglow { map = <...>; };`.
+         * Property name is plain `map` (not `*-map`) because the DT spec
+         * reserves `<phandle-name>-map` for phandle-array specifier mapping
+         * (e.g. gpio-map, interrupt-map); Zephyr silently ignores such names
+         * as regular properties. ZMK's matrix-transform uses the same `map`. */
+        map = <0xFFFF>;
 
         cu_entries: entries {
             compatible = "zmk,conditional-underglow-entries";

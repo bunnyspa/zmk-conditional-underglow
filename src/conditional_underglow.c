@@ -160,10 +160,10 @@ static const struct overlay_desc overlays[] = {
 #define N_ENTRIES   ARRAY_SIZE(entries)
 #define N_OVERLAYS  ARRAY_SIZE(overlays)
 
-/* Force-emit led_map. If the property isn't declared in the binding or isn't
- * set on the DT node, this will fail to compile — which is what we want, so
- * the failure is loud rather than silently producing LED_MAP_LEN=0. */
-static const uint16_t led_map[] = DT_INST_PROP(0, led_map);
+/* DT property is `map` (the kp→strip-LED index translation). Must be a bare
+ * name — Zephyr's DT spec treats `<name>-map` as phandle-array specifier
+ * mapping and silently ignores it as a regular property. */
+static const uint16_t led_map[] = DT_INST_PROP(0, map);
 #define LED_MAP_LEN ARRAY_SIZE(led_map)
 
 #define STRIP_NODE       DT_CHOSEN(zmk_underglow)

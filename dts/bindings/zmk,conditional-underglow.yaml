@@ -3,6 +3,6 @@ description: Conditional RGB underglow root node.
 compatible: "zmk,conditional-underglow"
 
 properties:
-  led-map:
+  map:
     type: array
     required: false
