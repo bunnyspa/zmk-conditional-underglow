@@ -1,3 +1,16 @@
 config ZMK_CONDITIONAL_UNDERGLOW
 	bool "Conditional RGB underglow (layer + BT profile)"
 	depends on ZMK_RGB_UNDERGLOW
+
+if ZMK_CONDITIONAL_UNDERGLOW
+
+# Module owns the strip from boot — don't let ZMK's effect tick start.
+config ZMK_RGB_UNDERGLOW_ON_START
+	default n
+
+# zmk_rgb_underglow_off() (if ever called) cuts ext_power → strip VCC →
+# parasitic-voltage brown-out where blue/green dim and only red survives.
+config ZMK_RGB_UNDERGLOW_EXT_POWER
+	default n
+
+endif

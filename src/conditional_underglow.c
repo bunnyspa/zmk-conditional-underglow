@@ -8,8 +8,6 @@
 #include <zephyr/sys/util.h>
 #include <zmk/event_manager.h>
 #include <zmk/keymap.h>
-#include <zmk/rgb_underglow.h>
-#include <zmk/workqueue.h>
 
 /* "Central role" = not split, or split central. */
 #if !IS_ENABLED(CONFIG_ZMK_SPLIT) || IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
@@ -311,7 +309,7 @@ static bool push_state(void) {
     }
     e1 |= ((uint32_t)(new_endpoint & 0x3)) << 20;
     struct zmk_behavior_binding binding = {
-        .behavior_dev = "cu_state_sync",
+        .behavior_dev = DEVICE_DT_NAME(DT_NODELABEL(cu_state_sync)),
         .param1 = e1,
         .param2 = new_layer,
     };
@@ -390,10 +388,7 @@ static void cu_render_work_handler(struct k_work *w) {
 }
 
 void cu_request_render(void) {
-    /* Lowprio workqueue: ZMK's `zmk_rgb_underglow_off` queues its strip-clear
-     * handler here. Submitting our render to the same queue guarantees it
-     * runs AFTER the clear (FIFO), so the clear never wipes our paint. */
-    k_work_submit_to_queue(zmk_workqueue_lowprio_work_q(), &cu_render_work);
+    k_work_submit(&cu_render_work);
 }
 
 #if CU_IS_CENTRAL
@@ -418,10 +413,8 @@ static int cu_event_listener(const zmk_event_t *eh) {
 static int conditional_underglow_init(void) {
     k_work_init(&cu_render_work, cu_render_work_handler);
 
-    /* Take exclusive ownership of the strip. ZMK's effect-tick timer is
-     * cancelled and a one-shot clear is queued on the lowprio workqueue;
-     * our render (also lowprio) will run after it and paint our pixels. */
-    zmk_rgb_underglow_off();
+    /* With CONFIG_ZMK_RGB_UNDERGLOW_ON_START=n the effect tick never starts,
+     * so there's nothing to cancel here. Our render() owns every pixel write. */
 
 #if CU_IS_CENTRAL
     cu_layer_mask = compute_layer_mask();
