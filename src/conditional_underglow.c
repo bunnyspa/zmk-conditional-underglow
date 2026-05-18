@@ -20,6 +20,9 @@
 
 #if CU_IS_CENTRAL
 #include <zmk/events/layer_state_changed.h>
+#if IS_ENABLED(CONFIG_ZMK_SPLIT)
+#include <zmk/events/split_peripheral_status_changed.h>
+#endif
 #endif
 
 #if CU_IS_CENTRAL && IS_ENABLED(CONFIG_ZMK_BLE)
@@ -265,22 +268,52 @@ static uint8_t compute_endpoint(void) {
 #endif
 }
 
-static void push_state(void) {
-    uint32_t e1 = 0;
+/* Throttle: only push (and only re-render) when computed state actually
+ * differs from what we last broadcast. Stops spurious continuous events
+ * (e.g. trackball-jitter-triggered MOUSE-layer re-activations) from
+ * flooding the split BLE TX queue and the lowprio workqueue. */
+static uint32_t last_layer_mask;
+static uint8_t  last_endpoint;
+static uint8_t  last_profile_states[CU_NUM_PROFILES];
+static bool     last_valid;  /* true after first push; before that, force a push */
+
+static bool push_state(void) {
+    uint8_t new_states[CU_NUM_PROFILES] = {0};
 #if IS_ENABLED(CONFIG_ZMK_BLE)
     for (int i = 0; i < CU_NUM_PROFILES; i++) {
-        cu_profile_states[i] = compute_slot_state(i);
-        e1 |= ((uint32_t)(cu_profile_states[i] & 0xF)) << (i * 4);
+        new_states[i] = compute_slot_state(i);
     }
 #endif
-    cu_current_endpoint = compute_endpoint();
-    e1 |= ((uint32_t)(cu_current_endpoint & 0x3)) << 20;
-    cu_layer_mask = compute_layer_mask();
+    uint8_t  new_endpoint = compute_endpoint();
+    uint32_t new_layer    = compute_layer_mask();
 
+    bool changed = !last_valid
+                   || new_layer != last_layer_mask
+                   || new_endpoint != last_endpoint;
+    for (int i = 0; !changed && i < CU_NUM_PROFILES; i++) {
+        if (new_states[i] != last_profile_states[i]) changed = true;
+    }
+    if (!changed) return false;
+
+    /* Commit to local cache + last-pushed snapshot. */
+    cu_layer_mask = new_layer;
+    cu_current_endpoint = new_endpoint;
+    for (int i = 0; i < CU_NUM_PROFILES; i++) cu_profile_states[i] = new_states[i];
+    last_layer_mask = new_layer;
+    last_endpoint = new_endpoint;
+    for (int i = 0; i < CU_NUM_PROFILES; i++) last_profile_states[i] = new_states[i];
+    last_valid = true;
+
+    /* Forward to peripheral. */
+    uint32_t e1 = 0;
+    for (int i = 0; i < CU_NUM_PROFILES; i++) {
+        e1 |= ((uint32_t)(new_states[i] & 0xF)) << (i * 4);
+    }
+    e1 |= ((uint32_t)(new_endpoint & 0x3)) << 20;
     struct zmk_behavior_binding binding = {
         .behavior_dev = "cu_state_sync",
         .param1 = e1,
-        .param2 = cu_layer_mask,
+        .param2 = new_layer,
     };
     struct zmk_behavior_binding_event event = {
         .layer = 0,
@@ -288,6 +321,7 @@ static void push_state(void) {
         .timestamp = k_uptime_get(),
     };
     zmk_behavior_invoke_binding(&binding, event, true);
+    return true;
 }
 #endif /* CU_IS_CENTRAL */
 
@@ -347,7 +381,10 @@ static struct k_work cu_render_work;
 static void cu_render_work_handler(struct k_work *w) {
     ARG_UNUSED(w);
 #if CU_IS_CENTRAL
-    push_state();
+    /* If state hasn't actually changed (e.g., the listener fired from a
+     * spurious trackball-driven layer re-activation), skip both the BLE
+     * forward and the local re-render. */
+    if (!push_state()) return;
 #endif
     render();
 }
@@ -361,7 +398,18 @@ void cu_request_render(void) {
 
 #if CU_IS_CENTRAL
 static int cu_event_listener(const zmk_event_t *eh) {
+#if IS_ENABLED(CONFIG_ZMK_SPLIT)
+    /* On peripheral connect, force the next push regardless of throttle —
+     * peripheral's cache may be stale or empty (boot, reconnect, etc.) and
+     * we need to re-broadcast even if our state hasn't changed. */
+    const struct zmk_split_peripheral_status_changed *split_ev =
+        as_zmk_split_peripheral_status_changed(eh);
+    if (split_ev && split_ev->connected) {
+        last_valid = false;
+    }
+#else
     ARG_UNUSED(eh);
+#endif
     cu_request_render();
     return ZMK_EV_EVENT_BUBBLE;
 }
@@ -400,5 +448,8 @@ ZMK_SUBSCRIPTION(conditional_underglow, zmk_ble_active_profile_changed);
 #endif
 #if IS_ENABLED(CONFIG_ZMK_USB)
 ZMK_SUBSCRIPTION(conditional_underglow, zmk_endpoint_changed);
+#endif
+#if IS_ENABLED(CONFIG_ZMK_SPLIT)
+ZMK_SUBSCRIPTION(conditional_underglow, zmk_split_peripheral_status_changed);
 #endif
 #endif
