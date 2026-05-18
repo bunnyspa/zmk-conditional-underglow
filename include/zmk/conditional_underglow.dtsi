@@ -19,6 +19,10 @@
     conditional_underglow: conditional_underglow {
         compatible = "zmk,conditional-underglow";
 
+        /* Placeholder so the DT_N_*_P_led_map macro is always emitted. Board
+         * overlays replace this value via `&conditional_underglow { led-map = <...>; };`. */
+        led-map = <0xFFFF>;
+
         cu_entries: entries {
             compatible = "zmk,conditional-underglow-entries";
         };
