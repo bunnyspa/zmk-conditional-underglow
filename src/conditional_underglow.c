@@ -318,7 +318,10 @@ static bool push_state(void) {
         .position = 0,
         .timestamp = k_uptime_get(),
     };
-    zmk_behavior_invoke_binding(&binding, event, true);
+    LOG_INF("cu push: dev=%s e1=0x%08x layer=0x%08x",
+            binding.behavior_dev, e1, new_layer);
+    int rc = zmk_behavior_invoke_binding(&binding, event, true);
+    LOG_INF("cu push invoke rc=%d", rc);
     return true;
 }
 #endif /* CU_IS_CENTRAL */

@@ -3,8 +3,11 @@
 #include <zephyr/device.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/util.h>
+#include <zephyr/logging/log.h>
 #include <drivers/behavior.h>
 #include <zmk/behavior.h>
+
+LOG_MODULE_REGISTER(cu_state_sync, CONFIG_ZMK_LOG_LEVEL);
 
 #if !IS_ENABLED(CONFIG_ZMK_SPLIT) || IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
 #define CU_IS_CENTRAL 1
@@ -27,6 +30,9 @@ static int behavior_init(const struct device *dev) {
 static int on_keymap_binding_pressed(struct zmk_behavior_binding *binding,
                                      struct zmk_behavior_binding_event event) {
     ARG_UNUSED(event);
+    LOG_INF("cu recv: dev=%s p1=0x%08x p2=0x%08x role=%s",
+            binding->behavior_dev, binding->param1, binding->param2,
+            CU_IS_CENTRAL ? "central" : "peripheral");
     uint32_t e1 = binding->param1;
     for (int i = 0; i < CU_NUM_PROFILES; i++) {
         cu_profile_states[i] = (e1 >> (i * 4)) & 0xF;
