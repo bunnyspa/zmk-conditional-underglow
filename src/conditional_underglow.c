@@ -160,7 +160,7 @@ static const struct overlay_desc overlays[] = {
 #define N_ENTRIES   ARRAY_SIZE(entries)
 #define N_OVERLAYS  ARRAY_SIZE(overlays)
 
-#if DT_INST_PROP_HAS_IDX(0, led_map, 0)
+#if DT_INST_NODE_HAS_PROP(0, led_map)
 static const uint16_t led_map[] = DT_INST_PROP(0, led_map);
 #define LED_MAP_LEN ARRAY_SIZE(led_map)
 #else
