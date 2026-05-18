@@ -7,6 +7,12 @@
         cu_state_sync: behavior_conditional_underglow_state_sync {
             compatible = "zmk,behavior-conditional-underglow-state-sync";
             #binding-cells = <1>;
+            /* Short label: ZMK split RUN_BEHAVIOR payload truncates the
+             * behavior name to a small fixed buffer. Full node name
+             * ("behavior_conditional_underglow_state_sync") is 41 chars and
+             * gets cut → device_get_binding fails on peripheral with -EINVAL.
+             * DEVICE_DT_NAME() prefers the label property when present. */
+            label = "CU_SYNC";
         };
     };
 
