@@ -1,23 +1,4 @@
-description: |
-  Conditional RGB underglow root.
-
-  Holds an optional led-map (key-position -> strip-LED index) and two child
-  grouping nodes:
-    entries  - whole-strip backgrounds (compatible "zmk,conditional-underglow-entries")
-    overlays - per-LED overlays         (compatible "zmk,conditional-underglow-overlays")
-
-  Resolution is two passes:
-    1. Walk entries children in DT order; the last match wins as the whole-strip
-       background. If nothing matches, CONFIG_ZMK_RGB_UNDERGLOW_*_START is used.
-    2. Walk overlays children in DT order; collect every match.
-
-  If the overlay set is empty, ZMK's effect loop owns the strip (background entry
-  color + effect applied via the standard API). Otherwise this module takes over
-  rendering: it stops the effect loop and writes pixels directly, with later
-  overlays overwriting earlier ones on the same pixel.
-
-  On split keyboards both halves resolve overlays locally against a shared
-  state cache that's synced from central via the cu_state_sync behavior.
+description: Conditional RGB underglow root node.
 
 compatible: "zmk,conditional-underglow"
 
@@ -25,7 +6,3 @@ properties:
   led-map:
     type: array
     required: false
-    description: |
-      Flat array indexed by key-position. Value at index N is the strip-LED
-      index for key N, or 0xFFFF for "no LED at this key". Required when any
-      overlay child is defined.
