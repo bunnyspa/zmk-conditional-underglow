@@ -17,3 +17,5 @@ properties:
   "#binding-cells":
     type: int
     const: 1
+  label:
+    type: string
