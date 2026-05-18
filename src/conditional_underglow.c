@@ -160,12 +160,11 @@ static const struct overlay_desc overlays[] = {
 #define N_ENTRIES   ARRAY_SIZE(entries)
 #define N_OVERLAYS  ARRAY_SIZE(overlays)
 
-#define LED_MAP_LEN DT_INST_PROP_LEN_OR(0, led_map, 0)
-#if LED_MAP_LEN > 0
+/* Force-emit led_map. If the property isn't declared in the binding or isn't
+ * set on the DT node, this will fail to compile — which is what we want, so
+ * the failure is loud rather than silently producing LED_MAP_LEN=0. */
 static const uint16_t led_map[] = DT_INST_PROP(0, led_map);
-#else
-static const uint16_t led_map[1] = { 0 };
-#endif
+#define LED_MAP_LEN ARRAY_SIZE(led_map)
 
 #define STRIP_NODE       DT_CHOSEN(zmk_underglow)
 #define STRIP_NUM_PIXELS DT_PROP(STRIP_NODE, chain_length)
