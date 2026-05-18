@@ -81,7 +81,7 @@ pixels.
 ## Split behavior
 
 The module compiles on **both halves** and resolves overlays locally on each
-side against its own `led-map`. Layer state is already split-synced by ZMK
+side against its own `map`. Layer state is already split-synced by ZMK
 (both halves see it); BT profile + endpoint state is central-only, so
 profile/endpoint selectors only ever match on central.
 
@@ -90,20 +90,20 @@ profile/endpoint selectors only ever match on central.
 | Whole-strip entry, no overlay match | Apply via `&rgb_ug` (syncs) | Receives sync (peripheral's `matched == 0` path is a no-op; central is the source of truth) |
 | Whole-strip entry + overlay match | Owned render (paints bg+overlays locally) | Owned render (same — paints bg+overlays locally against its synced state cache) |
 | Default fallback (`_START`) | Apply via `&rgb_ug` (syncs) | Receives sync |
-| Overlay matches on this half's `led-map` | Owned render | Owned render |
+| Overlay matches on this half's `map` | Owned render | Owned render |
 | Overlay's kps all map to `0xFFFF` on this half | No overlay on this strip | No overlay on this strip |
 
-Each half declares its own `led-map` so that key-positions on the other half
+Each half declares its own `map` so that key-positions on the other half
 resolve to `0xFFFF` and are skipped. An overlay targeting `key-positions = <0 7>`
-will paint kp 0 on the half whose `led-map` has a real index for kp 0, and
-paint kp 7 on the half whose `led-map` has a real index for kp 7.
+will paint kp 0 on the half whose `map` has a real index for kp 0, and
+paint kp 7 on the half whose `map` has a real index for kp 7.
 
 > **Effect sync caveat:** the `effect` cell on whole-strip entries is applied
 > locally on central; peripheral retains its current effect.
 >
 > **Profile selectors on peripheral:** an overlay/entry with `profile = <N>`
 > never matches on peripheral (it has no BT profile state). Use profile
-> selectors only for kps on the central half's `led-map`.
+> selectors only for kps on the central half's `map`.
 
 ---
 
@@ -153,7 +153,7 @@ CONFIG_ZMK_RGB_UNDERGLOW_BRT_START=25
     // Required when any overlay is defined.
     // Index by key-position (same numbering as ZMK combos);
     // value is the strip-LED index, or 0xFFFF for "no LED here".
-    led-map = <
+    map = <
         0  1  2  3  4  5
         6  7  8  9 10 11
        12 13 14 15 16 17
@@ -209,7 +209,7 @@ You can equivalently extend the predeclared labels:
 
 | Property | Type | Required | Notes |
 |---|---|---|---|
-| `led-map` | array of uints | when any overlay is defined | Indexed by key-position; value = strip-LED index or `0xFFFF` for "no LED". |
+| `map` | array of uints | when any overlay is defined | Indexed by key-position; value = strip-LED index or `0xFFFF` for "no LED". |
 
 ### `entries` children — whole-strip background
 
@@ -230,7 +230,7 @@ You can equivalently extend the predeclared labels:
 | `profile` | int | no | Same semantics as above. |
 | `state` | string-array | no | Same semantics as above. |
 | `endpoint` | string-array | no | Same semantics as above. |
-| `key-positions` | array | **yes** | Key-position indices to paint, translated through `led-map`. |
+| `key-positions` | array | **yes** | Key-position indices to paint, translated through `map`. |
 | `color` | `<H S B>` | **yes** | Solid color (overlays are solid-only). |
 
 `effect` is not allowed on overlay children — owned render bypasses ZMK's
@@ -242,5 +242,5 @@ effect loop. A `BUILD_ASSERT` flags it at compile time.
 
 - Overlays are solid-only — no animations, no per-pixel effects.
 - BT profile / endpoint selectors only match on central (peripheral has no
-  profile state); use them only for kps that the central `led-map` resolves.
+  profile state); use them only for kps that the central `map` resolves.
 - Maximum 32 `key-positions` per overlay child (`MAX_KPS_PER_OVERLAY`).

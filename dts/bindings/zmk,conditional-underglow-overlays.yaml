@@ -1,7 +1,7 @@
 description: |
   Container for per-LED overlay entries. Each matching overlay is painted on
   top of the whole-strip background, after key-positions are translated to
-  strip-LED indices via the parent led-map. The presence of any matching
+  strip-LED indices via the parent map. The presence of any matching
   overlay puts the module into render-ownership mode (ZMK's effect loop is
   stopped). Overlays are solid-only.
 
@@ -54,7 +54,7 @@ child-binding:
       required: true
       description: |
         Key-position indices to paint. Each kp is translated to a strip-LED
-        index through the parent led-map; kps mapped to 0xFFFF are skipped.
+        index through the parent map; kps mapped to 0xFFFF are skipped.
     color:
       type: array
       required: true

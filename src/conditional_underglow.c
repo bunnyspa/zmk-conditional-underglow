@@ -160,9 +160,10 @@ static const struct overlay_desc overlays[] = {
 #define N_ENTRIES   ARRAY_SIZE(entries)
 #define N_OVERLAYS  ARRAY_SIZE(overlays)
 
-/* DT property is `map` (the kp→strip-LED index translation). Must be a bare
- * name — Zephyr's DT spec treats `<name>-map` as phandle-array specifier
- * mapping and silently ignores it as a regular property. */
+/* kp -> strip-LED index translation. DT property name is bare `map` (not
+ * `led-map`); Zephyr's DT spec reserves `<name>-map` for phandle-array
+ * specifier mapping and silently ignores it as a regular property. The
+ * include dtsi declares a `<0xFFFF>` placeholder so this always compiles. */
 static const uint16_t led_map[] = DT_INST_PROP(0, map);
 #define LED_MAP_LEN ARRAY_SIZE(led_map)
 
@@ -316,10 +317,8 @@ static bool push_state(void) {
         .position = 0,
         .timestamp = k_uptime_get(),
     };
-    LOG_INF("cu push: dev=%s e1=0x%08x layer=0x%08x",
-            binding.behavior_dev, e1, new_layer);
-    int rc = zmk_behavior_invoke_binding(&binding, event, true);
-    LOG_INF("cu push invoke rc=%d", rc);
+    LOG_DBG("push: e1=%08x layer=%08x", e1, new_layer);
+    zmk_behavior_invoke_binding(&binding, event, true);
     return true;
 }
 #endif /* CU_IS_CENTRAL */
@@ -353,20 +352,17 @@ static void render(void) {
         pixel_buf[i] = bg_rgb;
     }
 
-    LOG_INF("render: N_OVERLAYS=%d layer_mask=0x%08x LED_MAP_LEN=%d",
-            (int)N_OVERLAYS, cu_layer_mask, (int)LED_MAP_LEN);
+    LOG_DBG("render: layer=%08x ep=%02x bg=%u,%u,%u",
+            cu_layer_mask, cu_current_endpoint, bg_h, bg_s, bg_b);
 
     /* Paint matching overlays. Later DT entries overwrite earlier ones on
      * the same pixel. kps mapped to 0xFFFF (other half / no LED) are
      * silently skipped. */
     for (size_t i = 0; i < N_OVERLAYS; i++) {
         const struct overlay_desc *o = &overlays[i];
-        bool m = selectors_match(o->has_layers, o->layers_mask,
-                                 o->has_profile, o->profile,
-                                 o->state_mask, o->endpoint_mask);
-        LOG_INF("  ov[%d] has_layers=%d mask=0x%08x kp_count=%d match=%d",
-                (int)i, o->has_layers, o->layers_mask, o->kp_count, m);
-        if (!m) continue;
+        if (!selectors_match(o->has_layers, o->layers_mask,
+                             o->has_profile, o->profile,
+                             o->state_mask, o->endpoint_mask)) continue;
         struct led_rgb c = hsb_to_rgb(o->h, o->s, o->b);
         for (size_t j = 0; j < o->kp_count; j++) {
             uint16_t kp = o->kps[j];

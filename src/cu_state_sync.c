@@ -30,9 +30,7 @@ static int behavior_init(const struct device *dev) {
 static int on_keymap_binding_pressed(struct zmk_behavior_binding *binding,
                                      struct zmk_behavior_binding_event event) {
     ARG_UNUSED(event);
-    LOG_INF("cu recv: dev=%s p1=0x%08x p2=0x%08x role=%s",
-            binding->behavior_dev, binding->param1, binding->param2,
-            CU_IS_CENTRAL ? "central" : "peripheral");
+    LOG_DBG("recv: p1=%08x p2=%08x", binding->param1, binding->param2);
     uint32_t e1 = binding->param1;
     for (int i = 0; i < CU_NUM_PROFILES; i++) {
         cu_profile_states[i] = (e1 >> (i * 4)) & 0xF;
