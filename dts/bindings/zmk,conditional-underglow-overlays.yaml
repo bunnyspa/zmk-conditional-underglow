@@ -47,7 +47,7 @@ child-binding:
         the currently selected profile.
 
         If `state` is omitted, the overlay matches only when `profile` is
-        the active BLE profile (back-compat default).
+        the active BLE profile.
         (Validated at C-macro expansion; an unknown string fails the build.)
     key-positions:
       type: array

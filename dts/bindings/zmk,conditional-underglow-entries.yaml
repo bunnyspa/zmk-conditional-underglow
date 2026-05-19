@@ -46,7 +46,7 @@ child-binding:
         the currently selected profile.
 
         If `state` is omitted, the entry matches only when `profile` is the
-        active BLE profile (back-compat default).
+        active BLE profile.
         (Validated at C-macro expansion; an unknown string fails the build.)
     color:
       type: array

@@ -38,8 +38,8 @@ static int on_keymap_binding_pressed(struct zmk_behavior_binding *binding,
     cu_current_endpoint = (uint8_t)((e1 >> 20) & 0x3);
     cu_layer_mask = binding->param2;
     /* Peripheral needs to re-render against the new cache. On central the
-     * work item that just invoked us is about to call resolve_and_render
-     * itself; re-submitting from here would race needlessly. */
+     * caller (cu_render_work_handler) renders right after invoking this
+     * binding, so re-submitting from here would just race itself. */
 #if !CU_IS_CENTRAL
     cu_request_render();
 #endif

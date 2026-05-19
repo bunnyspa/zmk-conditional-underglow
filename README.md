@@ -1,113 +1,12 @@
 # zmk-conditional-underglow
 
-A [ZMK](https://zmk.dev) module that drives the RGB underglow from the active
-keymap layer and/or active Bluetooth profile.
+A [ZMK](https://zmk.dev) module that drives the RGB underglow from current keyboard state.
 
-Two kinds of entries are supported:
+- Whole-strip and per-LED control
+- Layer, bluetooth profile, and USB/BLE endpoint triggers
+- Split keyboard support
 
-- **Whole-strip entries** (`entries`) — pick one background color+effect for the
-  whole strip based on the current state. Uses ZMK's effect loop.
-- **Per-LED overlays** (`overlays`) — paint individual LEDs on top of the
-  background by key-position. Solid color only; the module takes over rendering
-  while any overlay is active.
-
-> **Breaking change.** The old flat `layer-entries` / `profile-entries`
-> properties have been removed. Migrate to the new schema below.
-
----
-
-## How resolution works
-
-On every layer / BT profile / endpoint change the module runs two passes:
-
-1. **Background pass.** Walk `entries` children in DT order; the **last** child
-   whose selectors match wins. If nothing matches, the
-   `CONFIG_ZMK_RGB_UNDERGLOW_*_START` values are used (no need to author a
-   no-selector default).
-2. **Overlay pass.** Walk `overlays` children in DT order; collect **every**
-   match.
-
-A child matches when:
-- `layers` is absent OR at least one listed layer is active, AND
-- `endpoint` is absent OR the active output endpoint is in the listed
-  transports (`ble` / `usb`), AND
-- `profile` is absent OR — if `state` is absent — the active endpoint is BLE
-  on that profile (back-compat default) — OR — if `state` is present — the
-  profile is in any listed state.
-
-### Per-profile `state`
-
-`state` is a `string-array` enum that lets you target specific BT slot states.
-Requires `profile = <N>`. A slot's state is one of `unassigned` / `disconnected`
-/ `connected`, plus the `active` flag if it's the currently selected profile.
-
-| State | Meaning |
-|---|---|
-| `unassigned` | No peer bonded to this slot. |
-| `disconnected` | Peer bonded, link is down. |
-| `connected` | Peer bonded, link is up. |
-| `active` | This slot is the currently selected profile (orthogonal to the above). |
-
-```dts
-// 5 indicator LEDs (kp 1-5), one per profile slot. Each slot shows the
-// appropriate color for its current state.
-overlays {
-    p0_unassigned   { profile = <0>; state = "unassigned";   key-positions = <1>; color = <  0   0  5>; };
-    p0_disconnected { profile = <0>; state = "disconnected"; key-positions = <1>; color = < 30 100 25>; };
-    p0_connected    { profile = <0>; state = "connected";    key-positions = <1>; color = <120 100 25>; };
-    p0_active       { profile = <0>; state = "active";       key-positions = <1>; color = <221 100 25>; };
-    // ... and so on for profiles 1-4
-};
-```
-
-To re-render on background (non-active-slot) connect/disconnect events, the
-module registers a Zephyr `bt_conn_cb` via `BT_CONN_CB_DEFINE` and defers the
-re-render to the system workqueue.
-
-Then:
-- **Overlay set empty** → background color+effect goes through ZMK's normal API,
-  the effect loop runs as usual.
-- **Overlay set non-empty** → the module stops ZMK's effect loop, fills the
-  strip with the background color, then paints each matching overlay's LEDs
-  (later overlays overwrite earlier ones on the same pixel), and pushes the
-  pixel buffer once.
-
-**Authoring rule:** put broader selectors earlier, more specific ones later —
-in `entries` the last match wins; in `overlays` later writes win on contested
-pixels.
-
----
-
-## Split behavior
-
-The module compiles on **both halves** and resolves overlays locally on each
-side against its own `map`. Layer state is already split-synced by ZMK
-(both halves see it); BT profile + endpoint state is central-only, so
-profile/endpoint selectors only ever match on central.
-
-| Situation | What central does | What peripheral does |
-|---|---|---|
-| Whole-strip entry, no overlay match | Apply via `&rgb_ug` (syncs) | Receives sync (peripheral's `matched == 0` path is a no-op; central is the source of truth) |
-| Whole-strip entry + overlay match | Owned render (paints bg+overlays locally) | Owned render (same — paints bg+overlays locally against its synced state cache) |
-| Default fallback (`_START`) | Apply via `&rgb_ug` (syncs) | Receives sync |
-| Overlay matches on this half's `map` | Owned render | Owned render |
-| Overlay's kps all map to `0xFFFF` on this half | No overlay on this strip | No overlay on this strip |
-
-Each half declares its own `map` so that key-positions on the other half
-resolve to `0xFFFF` and are skipped. An overlay targeting `key-positions = <0 7>`
-will paint kp 0 on the half whose `map` has a real index for kp 0, and
-paint kp 7 on the half whose `map` has a real index for kp 7.
-
-> **Effect sync caveat:** the `effect` cell on whole-strip entries is applied
-> locally on central; peripheral retains its current effect.
->
-> **Profile selectors on peripheral:** an overlay/entry with `profile = <N>`
-> never matches on peripheral (it has no BT profile state). Use profile
-> selectors only for kps on the central half's `map`.
-
----
-
-## Getting started
+## Getting Started
 
 ### `config/west.yml`
 
@@ -116,16 +15,20 @@ manifest:
   remotes:
     - name: zmkfirmware
       url-base: https://github.com/zmkfirmware
+    # --- copy from here ---
     - name: bunnyspa
       url-base: https://github.com/bunnyspa
+    # --- to here ---
   projects:
     - name: zmk
       remote: zmkfirmware
       revision: main
       import: app/west.yml
+    # --- copy from here ---
     - name: zmk-conditional-underglow
       remote: bunnyspa
       revision: main
+    # --- to here ---
   self:
     path: config
 ```
@@ -136,111 +39,218 @@ manifest:
 CONFIG_ZMK_RGB_UNDERGLOW=y
 CONFIG_ZMK_CONDITIONAL_UNDERGLOW=y
 
-# Default state when nothing matches
-CONFIG_ZMK_RGB_UNDERGLOW_EFF_START=0
+# Required — the module owns the strip and must not race ZMK's effect tick.
+CONFIG_ZMK_RGB_UNDERGLOW_ON_START=n
+# Required — keep strip VCC up so colors don't brown out.
+CONFIG_ZMK_RGB_UNDERGLOW_EXT_POWER=n
+
+# Default color when no entry matches.
 CONFIG_ZMK_RGB_UNDERGLOW_HUE_START=0
 CONFIG_ZMK_RGB_UNDERGLOW_SAT_START=0
 CONFIG_ZMK_RGB_UNDERGLOW_BRT_START=25
-
 ```
 
-### `<keyboard>.overlay` (central half only on split)
+### `<keyboard>.overlay` or `<keyboard>.dtsi`
+
+#### Unibody (e.g. Planck — 4×12, 48 keys)
 
 ```c
 #include <zmk/conditional_underglow.dtsi>
 
 &conditional_underglow {
-    // Required when any overlay is defined.
-    // Index by key-position (same numbering as ZMK combos);
-    // value is the strip-LED index, or 0xFFFF for "no LED here".
+    /* key-position -> strip-LED index. */
     map = <
-        0  1  2  3  4  5
-        6  7  8  9 10 11
-       12 13 14 15 16 17
-       0xFFFF 0xFFFF 18 19 0xFFFF 0xFFFF
+         0  1  2  3  4  5  6  7  8  9 10 11
+        12 13 14 15 16 17 18 19 20 21 22 23
+        24 25 26 27 28 29 30 31 32 33 34 35
+        36 37 38 39 40 41 42 43 44 45 46 47
     >;
 
     entries {
-        // Whole-strip per BT profile
-        bt0 { profile = <0>; color = <  0   0 25>; };
-        bt1 { profile = <1>; color = <120 100 25>; };
-        bt2 { profile = <2>; color = <221 100 25>; };
-
-        // Whole-strip per layer (later = higher priority)
-        adjust { layers = <4>; color = <221 100 25>; };
-        mouse  { layers = <5>; color = <359 100 25>; };
-        scroll { layers = <6>; color = <359 100 25>; effect = <0>; };
+        // Whole-strip background per layer.
+        layer1 { layers = <1>; color = <221 100 25>; };  // blue when layer 1 is active
+        layer2 { layers = <2>; color = <  0 100 25>; };  // red when layer 2 is active
     };
 
     overlays {
-        // Highlight three thumb LEDs while MOUSE layer is held
-        mouse-thumbs {
-            layers = <5>;
-            key-positions = <0 1 2>;
-            color = <359 100 25>;
-        };
-
-        // BT-info LED on ADJUST: kp 7 mirrors the active BT profile color
-        bt0-on-adjust { layers = <4>; profile = <0>; key-positions = <7>; color = <  0   0 25>; };
-        bt1-on-adjust { layers = <4>; profile = <1>; key-positions = <7>; color = <120 100 25>; };
-        bt2-on-adjust { layers = <4>; profile = <2>; key-positions = <7>; color = <221 100 25>; };
-        bt3-on-adjust { layers = <4>; profile = <3>; key-positions = <7>; color = < 30 100 25>; };
-        bt4-on-adjust { layers = <4>; profile = <4>; key-positions = <7>; color = <300 100 25>; };
+        // Light kp 0 with the active BT profile's color.
+        bt0 { profile = <0>; key-positions = <0>; color = <  0   0 25>; };
+        bt1 { profile = <1>; key-positions = <0>; color = <120 100 25>; };
     };
 };
 ```
 
-You can equivalently extend the predeclared labels:
+#### Split (e.g. Corne — 3×6 + 3 thumbs per half, 42 keys)
 
+Each half declares its own `map` in its own overlay file. Key-positions belonging to the other half use `__` (alias for "no LED on this half"), so they're silently skipped on this side.
+
+Left half (`*_left.overlay`):
 ```c
-&cu_entries {
-    bt0 { profile = <0>; color = <0 0 25>; };
-};
-&cu_overlays {
-    mouse-thumbs { layers = <5>; key-positions = <0 1 2>; color = <359 100 25>; };
+#include <zmk/conditional_underglow.dtsi>
+
+&conditional_underglow {
+    map = <
+         0  1  2  3  4  5 __ __ __ __ __ __
+         6  7  8  9 10 11 __ __ __ __ __ __
+        12 13 14 15 16 17 __ __ __ __ __ __
+                 18 19 20 __ __ __
+    >;
 };
 ```
 
----
+Right half (`*_right.overlay`):
+```c
+#include <zmk/conditional_underglow.dtsi>
+
+&conditional_underglow {
+    map = <
+        __ __ __ __ __ __  0  1  2  3  4  5
+        __ __ __ __ __ __  6  7  8  9 10 11
+        __ __ __ __ __ __ 12 13 14 15 16 17
+                 __ __ __ 18 19 20
+    >;
+};
+```
+
+`entries` and `overlays` are shared between halves — put them in a file included by both halves (e.g. a shared `.dtsi`), using the same syntax as the unibody example:
+
+```c
+&conditional_underglow {
+    // No `map` here — each half defines its own above.
+
+    entries {
+        layer1 { layers = <1>; color = <221 100 25>; };
+        layer2 { layers = <2>; color = <  0 100 25>; };
+    };
+
+    overlays {
+        bt0 { profile = <0>; key-positions = <0>; color = <  0   0 25>; };
+        bt1 { profile = <1>; key-positions = <0>; color = <120 100 25>; };
+    };
+};
+```
+
+## How it resolves
+
+Two passes run on every layer / BT-profile / endpoint change:
+
+1. **Background** — walk `entries` in DT order. The **last** matching child wins. If nothing matches, the strip falls back to `CONFIG_ZMK_RGB_UNDERGLOW_*_START`.
+2. **Overlays** — walk `overlays` in DT order. **Every** match is painted on top of the background. Later writes overwrite earlier writes on the same pixel.
+
+If no overlay matches, the whole strip is colored via ZMK's normal API and the effect loop runs. As soon as any overlay matches, the module takes over rendering directly (solid colors only — no animation).
+
+**Authoring rule:** put broader selectors first, more specific ones later. In `entries` the last match wins; in `overlays` the last write wins on contested pixels.
+
+## Selectors
+
+All four selectors are optional; an omitted selector matches anything.
+
+**`layers`** — array of layer indices. Matches if any listed layer is active.
+
+**`profile`** — BT profile 0–4. Without an explicit `state`, this only matches when the keyboard is currently outputting via BLE to that slot. To target other slot states, add `state`.
+
+**`state`** — string-array of slot-state names. Requires `profile`. Each slot is in exactly one of:
+
+| State | Meaning |
+|---|---|
+| `unassigned` | No peer bonded to this slot. |
+| `disconnected` | Peer bonded, link is down. |
+| `connected` | Peer bonded, link is up. |
+| `active` | This is the currently selected slot (ORs with one of the above). |
+
+`state` is OR-matched — `state = "disconnected", "connected"` matches if either bit is set.
+
+**`endpoint`** — string-array of `"ble"` / `"usb"`. Matches when the active output is in the listed transports.
 
 ## Properties
 
-### `conditional_underglow` (parent)
+### `entries` (whole-strip background)
 
-| Property | Type | Required | Notes |
-|---|---|---|---|
-| `map` | array of uints | when any overlay is defined | Indexed by key-position; value = strip-LED index or `0xFFFF` for "no LED". |
+**`color = <H S B>`** *(required)* — H 0–360, S 0–100, B 0–100.
 
-### `entries` children — whole-strip background
+**`effect`** *(optional)* — ZMK effect index, default 0 (solid). See [ZMK lighting](https://zmk.dev/docs/config/lighting).
 
-| Property | Type | Required | Notes |
-|---|---|---|---|
-| `layers` | array | no | Match if any listed layer is active. Omit = any layer. |
-| `profile` | int | no | BT profile 0–4. Omit = any profile / USB. |
-| `state` | string-array | no | Profile-state filter (requires `profile`). Values: `unassigned`, `disconnected`, `connected`, `active`. See above. |
-| `endpoint` | string-array | no | Output-transport filter. Values: `ble`, `usb`. Omit = endpoint-agnostic. |
-| `color` | `<H S B>` | **yes** | H 0–360, S 0–100, B 0–100. |
-| `effect` | int | no | ZMK effect index. Default 0 (solid). See [ZMK lighting](https://zmk.dev/docs/config/lighting). |
+Plus any of the four selectors above.
 
-### `overlays` children — per-LED overlay
+### `overlays` (per-LED)
 
-| Property | Type | Required | Notes |
-|---|---|---|---|
-| `layers` | array | no | Same semantics as above. |
-| `profile` | int | no | Same semantics as above. |
-| `state` | string-array | no | Same semantics as above. |
-| `endpoint` | string-array | no | Same semantics as above. |
-| `key-positions` | array | **yes** | Key-position indices to paint, translated through `map`. |
-| `color` | `<H S B>` | **yes** | Solid color (overlays are solid-only). |
+**`key-positions = <…>`** *(required)* — indices to paint, translated through the parent `map`. Up to 32 per overlay.
 
-`effect` is not allowed on overlay children — owned render bypasses ZMK's
-effect loop. A `BUILD_ASSERT` flags it at compile time.
+**`color = <H S B>`** *(required)* — solid color. `effect` is not allowed on overlays — the owned-render path bypasses ZMK's effect loop.
 
----
+Plus any of the four selectors above.
 
-## Limitations
+### Parent `map`
+
+Required when any overlay is defined. Flat array indexed by key-position; the value is the strip-LED index for that key, or `__` for "no LED on this half".
+
+The array can be longer than the keymap — extra entries become synthetic kps that address LEDs not tied to any real key (e.g. underglow LEDs at the bottom of a per-key board). See [Addressing non-key LEDs](#addressing-non-key-leds) below.
+
+## Split keyboards
+
+The module runs on both halves. Central computes state (active layer, BT profile, endpoint) and broadcasts it to peripheral via the standard split RUN_BEHAVIOR channel. Both halves resolve overlays locally against the same state cache.
+
+Each half declares its own `map`, so an overlay with `key-positions = <0 7>` paints kp 0 on whichever half has it, and kp 7 on whichever half has it.
+
+> [!NOTE]
+> The `effect` cell on whole-strip entries is applied locally on central; peripheral keeps its current effect.
+
+## Examples
+
+Per-slot indicator LEDs — five LEDs (kp 1–5), each shows its slot's bonding state, with the active slot lit green:
+
+```c
+overlays {
+    p0_un  { profile = <0>; state = "unassigned";   key-positions = <1>; color = <  0   0  5>; };
+    p0_dis { profile = <0>; state = "disconnected"; key-positions = <1>; color = <  0 100 25>; };
+    p0_con { profile = <0>; state = "connected";    key-positions = <1>; color = < 60 100 25>; };
+    p0_act { profile = <0>; state = "active";       key-positions = <1>; color = <120 100 25>; };
+    // ... and so on for profiles 1–4
+};
+```
+
+USB endpoint indicator:
+
+```c
+overlays {
+    usb_active { endpoint = "usb"; key-positions = <17>; color = <120 100 25>; };
+};
+```
+
+### Addressing non-key LEDs
+
+Some boards have LEDs on the strip that aren't tied to any key — e.g. a per-key Corne with 21 per-key LEDs *plus* 6 underglow LEDs at the bottom edge of the PCB. Those underglow LEDs have no `&kp` position to reference.
+
+Solution: extend the `map` past the last real kp into synthetic kp indices. The module just uses the array as a lookup table — it doesn't care whether an index corresponds to a real keymap position.
+
+```c
+&conditional_underglow {
+    map = <
+        // real key-positions (kp 0-41 on per-key Corne, 1 LED each)
+         0  1  2  3  4  5 __ __ __ __ __ __
+         6  7  8  9 10 11 __ __ __ __ __ __
+        12 13 14 15 16 17 __ __ __ __ __ __
+                 18 19 20 __ __ __
+
+        // synthetic kps 42-47 → underglow strip LEDs 21-26
+        21 22 23 24 25 26
+    >;
+
+    overlays {
+        // Light all 6 underglow LEDs red on the MOUSE layer.
+        underglow_mouse {
+            layers = <5>;
+            key-positions = <42 43 44 45 46 47>;
+            color = <  0 100 25>;
+        };
+    };
+};
+```
+
+> [!NOTE]
+> Synthetic kps are a local convention — they exist only as keys into your `map`. ZMK's keymap, combos, and other features don't see them.
+
+## Notes
 
 - Overlays are solid-only — no animations, no per-pixel effects.
-- BT profile / endpoint selectors only match on central (peripheral has no
-  profile state); use them only for kps that the central `map` resolves.
-- Maximum 32 `key-positions` per overlay child (`MAX_KPS_PER_OVERLAY`).
+- BT profile / endpoint state is central-only on split keyboards; profile/endpoint selectors only fire for kps that the central half's `map` resolves.

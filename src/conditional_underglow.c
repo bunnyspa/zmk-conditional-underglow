@@ -224,7 +224,9 @@ static bool selectors_match(bool has_layers, uint32_t layers_mask,
     if (profile >= CU_NUM_PROFILES) return false;
     uint8_t state = cu_profile_states[profile];
     if (state_mask == 0) {
-        /* Back-compat: profile-only = active BLE profile. */
+        /* `profile = <N>` without an explicit `state` matches only when N is
+         * the currently-selected BLE profile (i.e. the slot ZMK is outputting
+         * to). Use an explicit `state = "..."` to match other states. */
         if (!(cu_current_endpoint & CU_ENDPOINT_BLE)) return false;
         return (state & CU_STATE_ACTIVE) != 0;
     }
@@ -266,9 +268,9 @@ static uint8_t compute_endpoint(void) {
 }
 
 /* Throttle: only push (and only re-render) when computed state actually
- * differs from what we last broadcast. Stops spurious continuous events
- * (e.g. trackball-jitter-triggered MOUSE-layer re-activations) from
- * flooding the split BLE TX queue and the lowprio workqueue. */
+ * differs from what we last broadcast. Prevents duplicate events (e.g. a
+ * pointing-device layer re-activating each input report) from flooding the
+ * split BLE TX queue. */
 static uint32_t last_layer_mask;
 static uint8_t  last_endpoint;
 static uint8_t  last_profile_states[CU_NUM_PROFILES];
@@ -323,9 +325,9 @@ static bool push_state(void) {
 }
 #endif /* CU_IS_CENTRAL */
 
-/* Pixel render. Runs on ZMK's lowprio workqueue — same queue ZMK's
- * underglow off-handler uses, so our paint is serialized after the
- * one-shot clear at init. */
+/* Pixel render. Resolves the background entry, fills the pixel buffer,
+ * then paints matching overlays on top and pushes the whole strip via
+ * led_strip_update_rgb in one shot. */
 static void render(void) {
     /* Resolve bg from entries (last match wins). */
     const struct entry_desc *bg = NULL;
@@ -382,9 +384,8 @@ static struct k_work cu_render_work;
 static void cu_render_work_handler(struct k_work *w) {
     ARG_UNUSED(w);
 #if CU_IS_CENTRAL
-    /* If state hasn't actually changed (e.g., the listener fired from a
-     * spurious trackball-driven layer re-activation), skip both the BLE
-     * forward and the local re-render. */
+    /* push_state() returns false when nothing has actually changed since the
+     * last broadcast, in which case there's no need to re-render either. */
     if (!push_state()) return;
 #endif
     render();
@@ -416,8 +417,8 @@ static int cu_event_listener(const zmk_event_t *eh) {
 static int conditional_underglow_init(void) {
     k_work_init(&cu_render_work, cu_render_work_handler);
 
-    /* With CONFIG_ZMK_RGB_UNDERGLOW_ON_START=n the effect tick never starts,
-     * so there's nothing to cancel here. Our render() owns every pixel write. */
+    /* Requires CONFIG_ZMK_RGB_UNDERGLOW_ON_START=n — render() owns every
+     * pixel write and must not race ZMK's effect tick. */
 
 #if CU_IS_CENTRAL
     cu_layer_mask = compute_layer_mask();
