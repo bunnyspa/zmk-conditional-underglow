@@ -1,9 +1,7 @@
 description: |
   Container for per-LED overlay entries. Each matching overlay is painted on
   top of the whole-strip background, after key-positions are translated to
-  strip-LED indices via the parent map. The presence of any matching
-  overlay puts the module into render-ownership mode (ZMK's effect loop is
-  stopped). Overlays are solid-only.
+  strip-LED indices via the parent map. Solid color only.
 
 compatible: "zmk,conditional-underglow-overlays"
 

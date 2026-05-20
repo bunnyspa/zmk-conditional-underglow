@@ -1,7 +1,7 @@
 description: |
   Container for whole-strip background entries. Children are matched against
-  the active layer/profile state; the last matching child's color+effect
-  becomes the whole-strip background.
+  the active layer/profile state; the last matching child's color becomes
+  the whole-strip background.
 
 compatible: "zmk,conditional-underglow-entries"
 
@@ -52,10 +52,3 @@ child-binding:
       type: array
       required: true
       description: "[H S B]: hue 0-360, saturation 0-100, brightness 0-100."
-    effect:
-      type: int
-      required: false
-      default: 0
-      description: |
-        ZMK RGB effect index (see https://zmk.dev/docs/config/lighting).
-        Default 0 (solid).
